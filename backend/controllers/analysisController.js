@@ -4,7 +4,7 @@ const fs = require("fs");
 const Paper = require("../models/Paper");
 const Issue = require("../models/Issue");
 const { createEvent } = require("../utils/hashChain");
-const { generateAIAdvice } = require("./aiController");
+const { generateAIAdvice, analyzePageVision } = require("./aiController");
 const { calculateTrustScore } = require("./trustController");
 
 const PYTHON_DIR = path.join(__dirname, "../../python");
@@ -106,6 +106,37 @@ async function runAnalysisPipeline(paperId) {
 
     await createEvent(paperId, "content_detected", {
       pagesWithContent: contentData.pages.filter((p) => p.has_content).length,
+    });
+
+    // ── PHASE 4.5: Vision AI — run on content pages only ────────────────────
+    // Uses the Nano Omni vision model to extract question-level annotation data.
+    // We skip blank pages to conserve free-tier API rate limits.
+    // A 2-second delay between calls avoids hitting the rate limiter.
+    await updateStatus(paperId, "vision_analysis");
+    const contentPages = contentData.pages.filter((p) => p.has_content);
+    const visionPages = [];
+
+    console.log(`[Vision] Running vision analysis on ${contentPages.length} content page(s)...`);
+    for (const cp of contentPages) {
+      const imagePath = path.join(processedDir, `page_${String(cp.page_number).padStart(3, "0")}.png`);
+      if (!fs.existsSync(imagePath)) continue;
+
+      const questions = await analyzePageVision(imagePath);
+      visionPages.push({ pageNumber: cp.page_number, questions });
+      console.log(`[Vision] Page ${cp.page_number}: found ${questions.length} question(s)`);
+
+      // Rate-limit pause between pages (free tier ~10 req/min)
+      if (contentPages.indexOf(cp) < contentPages.length - 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+
+    await createEvent(paperId, "vision_analysis_complete", {
+      pagesAnalyzed: visionPages.length,
+      totalQuestionsFound: visionPages.reduce((sum, vp) => sum + vp.questions.length, 0),
+      unevaluatedQuestions: visionPages.reduce(
+        (sum, vp) => sum + vp.questions.filter((q) => q.box_color === "none").length, 0
+      ),
     });
 
     // ── PHASE 5: Cross-reference ────────────────────────────────────────────
@@ -233,9 +264,9 @@ async function runAnalysisPipeline(paperId) {
     });
     await createEvent(paperId, "trust_score_calculated", { trustScore, breakdown });
 
-    // ── PHASE 7: AI advice ──────────────────────────────────────────────────
+    // ── PHASE 7: AI advice (Reasoning model + Vision JSON) ─────────────────
     await updateStatus(paperId, "generating_advice");
-    const advice = await generateAIAdvice(paperId);
+    const advice = await generateAIAdvice(paperId, visionPages);
     await Paper.findByIdAndUpdate(paperId, { aiAdvice: advice });
     await createEvent(paperId, "ai_advice_generated", {
       adviceLength: advice.length,

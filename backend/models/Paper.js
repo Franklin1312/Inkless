@@ -13,6 +13,7 @@ const paperSchema = new mongoose.Schema(
         "detecting_blur",
         "detecting_annotations",
         "detecting_content",
+        "vision_analysis",
         "cross_referencing",
         "calculating_score",
         "generating_advice",

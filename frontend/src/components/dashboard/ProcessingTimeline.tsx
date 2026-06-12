@@ -3,15 +3,16 @@
 import { CheckCircle, Circle, Loader2 } from "lucide-react";
 
 const PIPELINE_STEPS = [
-  { event: "uploaded",               label: "File uploaded",              desc: "PDF received and stored" },
-  { event: "pages_extracted",        label: "Pages extracted",            desc: "PDF rendered to images" },
-  { event: "blur_check_complete",    label: "Scan quality checked",       desc: "Blur detection per page" },
-  { event: "annotations_detected",   label: "Evaluator marks read",       desc: "Green/red/blue boxes detected" },
-  { event: "content_detected",       label: "Student content detected",   desc: "Ink density + OCR analysis" },
-  { event: "cross_reference_complete", label: "Cross-reference complete", desc: "Marks vs content compared" },
-  { event: "trust_score_calculated", label: "Trust score calculated",     desc: "Weighted scoring applied" },
-  { event: "ai_advice_generated",    label: "AI recommendation ready",    desc: "Claude analysed findings" },
-  { event: "analysis_complete",      label: "Analysis complete",          desc: "Full audit report ready" },
+  { event: "uploaded",                  label: "File uploaded",              desc: "PDF received and stored" },
+  { event: "pages_extracted",           label: "Pages extracted",            desc: "PDF rendered to images" },
+  { event: "blur_check_complete",       label: "Scan quality checked",       desc: "Blur detection per page" },
+  { event: "annotations_detected",      label: "Evaluator marks read",       desc: "Green/red/blue boxes detected" },
+  { event: "content_detected",          label: "Student content detected",   desc: "Ink density + OCR analysis" },
+  { event: "vision_analysis_complete",  label: "Vision AI analysis",         desc: "Question-level mark extraction (Nano Omni)" },
+  { event: "cross_reference_complete",  label: "Cross-reference complete",   desc: "Marks vs content compared" },
+  { event: "trust_score_calculated",    label: "Trust score calculated",     desc: "Weighted scoring applied" },
+  { event: "ai_advice_generated",       label: "AI recommendation ready",    desc: "Reasoning model analysed findings (Ultra)" },
+  { event: "analysis_complete",         label: "Analysis complete",          desc: "Full audit report ready" },
 ];
 
 interface Props {

@@ -1,16 +1,13 @@
 const https = require("https");
+const fs = require("fs");
+const path = require("path");
 const Issue = require("../models/Issue");
 const Paper = require("../models/Paper");
 
-// Uses OpenRouter's OpenAI-compatible API with a free model
-async function callOpenRouter(prompt) {
+// ─── Core HTTP helper for OpenRouter ────────────────────────────────────────
+function openRouterRequest(bodyObj, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      model: "nvidia/nemotron-3-ultra-550b-a55b:free",
-      max_tokens: 600,
-      messages: [{ role: "user", content: prompt }],
-    });
-
+    const body = JSON.stringify(bodyObj);
     const options = {
       hostname: "openrouter.ai",
       path: "/api/v1/chat/completions",
@@ -18,7 +15,7 @@ async function callOpenRouter(prompt) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "http://localhost:3000", // Required by OpenRouter
+        "HTTP-Referer": "http://localhost:3000",
         "X-Title": "Inkless Audit System",
         "Content-Length": Buffer.byteLength(body),
       },
@@ -30,18 +27,12 @@ async function callOpenRouter(prompt) {
       res.on("end", () => {
         try {
           const parsed = JSON.parse(data);
-
-          // Log full response for debugging
           if (parsed.error) {
             console.error("OpenRouter error response:", JSON.stringify(parsed.error));
             return reject(new Error(`OpenRouter: ${parsed.error.message || JSON.stringify(parsed.error)}`));
           }
-
           const text = parsed.choices?.[0]?.message?.content;
-          if (!text) {
-            return reject(new Error("Empty response from OpenRouter"));
-          }
-
+          if (!text) return reject(new Error("Empty response from OpenRouter"));
           resolve(text.trim());
         } catch (e) {
           reject(new Error(`Failed to parse OpenRouter response: ${e.message}`));
@@ -54,46 +45,134 @@ async function callOpenRouter(prompt) {
       req.destroy();
       reject(new Error("OpenRouter request timed out"));
     });
-    
-    req.setTimeout(15000); // 15 second timeout
+    req.setTimeout(timeoutMs);
     req.write(body);
     req.end();
   });
 }
 
-async function generateAIAdvice(paperId) {
+// ─── STEP 1: Vision Extraction ───────────────────────────────────────────────
+// Sends a page image to the Nano Omni vision model and extracts
+// structured JSON: which question numbers exist and what color their box is.
+async function analyzePageVision(imagePath) {
+  try {
+    const imageBuffer = fs.readFileSync(imagePath);
+    const base64Image = imageBuffer.toString("base64");
+    const ext = path.extname(imagePath).replace(".", "").toLowerCase();
+    const mimeType = ext === "png" ? "image/png" : "image/jpeg";
+
+    const visionResult = await openRouterRequest({
+      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      max_tokens: 800,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: `data:${mimeType};base64,${base64Image}` },
+            },
+            {
+              type: "text",
+              text: `Identify every question number on this answer sheet page and the color of the evaluator's mark or box next to it (e.g., red tick, green tick, blue box with a number, or a cross).
+Output ONLY a valid JSON array with no extra text or explanation. Each element must have exactly two keys:
+- "question_number": the question label (e.g. "1", "2a", "Q3")
+- "box_color": the color of the evaluator mark ("green", "red", "blue", "black", or "none" if no mark found)
+
+Example output: [{"question_number":"1","box_color":"green"},{"question_number":"2","box_color":"none"}]
+
+If no question numbers are visible, output an empty array: []`,
+            },
+          ],
+        },
+      ],
+    }, 45000); // 45s for vision model (larger payload)
+
+    // Extract JSON array from the response (model may wrap it in markdown)
+    const jsonMatch = visionResult.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+    return JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    console.warn(`Vision analysis failed for ${imagePath}: ${err.message}`);
+    return []; // Graceful fallback — don't fail the whole pipeline
+  }
+}
+
+// ─── STEP 3: Reasoning & Advice ─────────────────────────────────────────────
+// Passes the aggregated vision JSON + existing CV issues to the Ultra model
+// for a professional audit recommendation with teacher tips.
+async function generateAIAdvice(paperId, visionPages = []) {
   const paper = await Paper.findById(paperId);
   const issues = await Issue.find({ paperId }).sort({ severity: 1 });
 
-  if (issues.length === 0) {
+  // Build vision summary string
+  let visionSummary = "";
+  if (visionPages.length > 0) {
+    const visionLines = visionPages
+      .filter((vp) => vp.questions.length > 0)
+      .map((vp) => {
+        const qList = vp.questions
+          .map((q) => `Q${q.question_number}(${q.box_color})`)
+          .join(", ");
+        return `  Page ${vp.pageNumber}: ${qList}`;
+      })
+      .join("\n");
+
+    const unevaluatedQs = visionPages.flatMap((vp) =>
+      vp.questions
+        .filter((q) => q.box_color === "none")
+        .map((q) => `Page ${vp.pageNumber} Q${q.question_number}`)
+    );
+
+    visionSummary = `
+Vision AI Scan Results (question-level analysis):
+${visionLines || "  No question boxes detected by vision model."}
+
+Unevaluated questions detected by vision: ${
+      unevaluatedQs.length > 0 ? unevaluatedQs.join(", ") : "None"
+    }`;
+  }
+
+  // No issues at all and no vision anomalies
+  if (issues.length === 0 && visionSummary === "") {
     return "No significant issues were detected in this answer sheet. The evaluation appears to have been conducted properly. Re-evaluation is not recommended at this time.";
   }
 
-  const issuesSummary = issues
-    .map(
-      (i) =>
-        `- [${i.severity.toUpperCase()}] Page ${i.page_number}: ${i.type.replace(/_/g, " ")} — ${i.details}`
-    )
-    .join("\n");
+  const issuesSummary = issues.length > 0
+    ? issues
+        .map((i) => `- [${i.severity.toUpperCase()}] Page ${i.pageNumber}: ${i.type.replace(/_/g, " ")} — ${i.details}`)
+        .join("\n")
+    : "No structural issues detected by CV pipeline.";
 
   const prompt = `You are an expert educational auditor reviewing a CBSE Class 12 answer sheet evaluation audit.
 
 Student: ${paper.studentName || "Unknown"}
 Subject: ${paper.subject || "Unknown"}
 Trust Score: ${paper.trustScore}/100
-Total Issues Found: ${issues.length}
+Total CV Issues Found: ${issues.length}
+${visionSummary}
 
-Issues Detected:
+CV Pipeline Issues:
 ${issuesSummary}
 
-Write a professional 3-4 sentence audit recommendation for the student. Be specific about which pages and questions had issues. State clearly whether re-evaluation is recommended and why. Use precise, factual language — this may be submitted to CBSE as evidence. Do not use bullet points. Write in plain paragraphs only.`;
+Your task has two parts:
+1. Write a professional 2-3 sentence audit recommendation for the student. State clearly whether re-evaluation is recommended and why. Use precise, factual language — this may be submitted to CBSE as evidence.
+2. Then write exactly 3 practical tips for the evaluator to improve their grading process for future papers. Label them "Tip 1:", "Tip 2:", "Tip 3:".
+
+Write in plain paragraphs only. Do not use bullet points or markdown.`;
 
   try {
-    return await callOpenRouter(prompt);
+    return await openRouterRequest({
+      model: "nvidia/nemotron-3-ultra-550b-a55b:free",
+      max_tokens: 800,
+      messages: [{ role: "user", content: prompt }],
+    }, 20000);
   } catch (err) {
-    console.error("OpenRouter API error:", err);
-    return `${issues.length} issue(s) were detected during automated analysis, including ${issues.filter((i) => i.severity === "critical").length} critical issue(s). Manual review and re-evaluation is recommended.`;
+    console.error("OpenRouter reasoning API error:", err.message);
+    // Fallback summary if Ultra model fails
+    const critCount = issues.filter((i) => i.severity === "critical").length;
+    return `${issues.length} issue(s) were detected during automated analysis, including ${critCount} critical issue(s). Manual review and re-evaluation is recommended. Tip 1: Ensure all pages are evaluated before submission. Tip 2: Use clearly legible marks to avoid misinterpretation. Tip 3: Double-check arithmetic totals on the front cover.`;
   }
 }
 
-module.exports = { generateAIAdvice };
+module.exports = { generateAIAdvice, analyzePageVision };
