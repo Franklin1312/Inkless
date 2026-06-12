@@ -54,39 +54,58 @@ function openRouterRequest(bodyObj, timeoutMs = 30000) {
 // ─── STEP 1: Vision Extraction ───────────────────────────────────────────────
 // Sends a page image to the Nano Omni vision model and extracts
 // structured JSON: which question numbers exist and what color their box is.
+// Images are resized to ≤1024px wide before sending to keep payload manageable.
 async function analyzePageVision(imagePath) {
+  const VISION_MODELS = [
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "nex-agi/nex-n2-pro:free",
+  ];
+
   try {
-    const imageBuffer = fs.readFileSync(imagePath);
+    // Resize image to max 1024px wide to reduce base64 payload size
+    let imageBuffer;
+    try {
+      const sharp = require("sharp");
+      imageBuffer = await sharp(imagePath)
+        .resize({ width: 1024, withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+    } catch (_sharpErr) {
+      // sharp not installed — fall back to reading raw file
+      imageBuffer = fs.readFileSync(imagePath);
+    }
+
     const base64Image = imageBuffer.toString("base64");
-    const ext = path.extname(imagePath).replace(".", "").toLowerCase();
-    const mimeType = ext === "png" ? "image/png" : "image/jpeg";
+    const mimeType = "image/jpeg";
 
-    const visionResult = await openRouterRequest({
-      model: "meta-llama/llama-3.2-11b-vision-instruct:free",
-      max_tokens: 800,
-      messages: [
-        {
-          role: "user",
-          content: [
+    const visionPrompt = `Identify every question number on this answer sheet page and the color of the evaluator mark or box next to it.\nOutput ONLY a valid JSON array. Each element must have:\n- "question_number": the question label (e.g. "1", "2a", "Q3")\n- "box_color": the color ("green", "red", "blue", "black", or "none" if no mark)\n\nExample: [{"question_number":"1","box_color":"green"},{"question_number":"2","box_color":"none"}]\n\nIf no question numbers visible, output: []`;
+
+    let visionResult = null;
+    for (const model of VISION_MODELS) {
+      try {
+        visionResult = await openRouterRequest({
+          model,
+          max_tokens: 800,
+          messages: [
             {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64Image}` },
-            },
-            {
-              type: "text",
-              text: `Identify every question number on this answer sheet page and the color of the evaluator's mark or box next to it (e.g., red tick, green tick, blue box with a number, or a cross).
-Output ONLY a valid JSON array with no extra text or explanation. Each element must have exactly two keys:
-- "question_number": the question label (e.g. "1", "2a", "Q3")
-- "box_color": the color of the evaluator mark ("green", "red", "blue", "black", or "none" if no mark found)
-
-Example output: [{"question_number":"1","box_color":"green"},{"question_number":"2","box_color":"none"}]
-
-If no question numbers are visible, output an empty array: []`,
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${mimeType};base64,${base64Image}` },
+                },
+                { type: "text", text: visionPrompt },
+              ],
             },
           ],
-        },
-      ],
-    }, 45000); // 45s for vision model (larger payload)
+        }, 45000);
+        break; // success — stop trying fallback models
+      } catch (modelErr) {
+        console.warn(`[Vision] Model ${model} failed: ${modelErr.message} — trying next...`);
+      }
+    }
+
+    if (!visionResult) return [];
 
     // Extract JSON array from the response (model may wrap it in markdown)
     const jsonMatch = visionResult.match(/\[[\s\S]*\]/);
