@@ -62,7 +62,7 @@ async function analyzePageVision(imagePath) {
     const mimeType = ext === "png" ? "image/png" : "image/jpeg";
 
     const visionResult = await openRouterRequest({
-      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      model: "meta-llama/llama-3.2-11b-vision-instruct:free",
       max_tokens: 800,
       messages: [
         {

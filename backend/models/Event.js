@@ -15,6 +15,7 @@ const eventSchema = new mongoose.Schema(
         "blur_check_complete",
         "annotations_detected",
         "content_detected",
+        "vision_analysis_complete",
         "cross_reference_complete",
         "trust_score_calculated",
         "ai_advice_generated",
