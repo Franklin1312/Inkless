@@ -78,7 +78,28 @@ async function analyzePageVision(imagePath) {
     const base64Image = imageBuffer.toString("base64");
     const mimeType = "image/jpeg";
 
-    const visionPrompt = `Identify every question number on this answer sheet page and the color of the evaluator mark or box next to it.\nOutput ONLY a valid JSON array. Each element must have:\n- "question_number": the question label (e.g. "1", "2a", "Q3")\n- "box_color": the color ("green", "red", "blue", "black", or "none" if no mark)\n\nExample: [{"question_number":"1","box_color":"green"},{"question_number":"2","box_color":"none"}]\n\nIf no question numbers visible, output: []`;
+    const visionPrompt = `This is a page from a CBSE Class 12 answer sheet evaluated using the OSM (Online Subjective Marks) system.
+
+The evaluator leaves colored rectangular annotation boxes on the page:
+- GREEN box with a checkmark (✓) and a number = marks awarded for that question (e.g. "✓ 1 14S1" means 1 mark for question 14)
+- RED box with 0 = zero marks given (e.g. "0 7S1" means 0 marks for question 7)  
+- BLUE box with a sub-total = partial marks tally
+- "REPEAT ANS+" stamp = answer was flagged as a repeated/duplicate and disqualified
+- Student handwriting with NO colored box nearby = the answer was NEVER evaluated by the examiner
+
+Your task: Look at this page and identify the evaluation status of each visible answer section.
+
+Output ONLY a valid JSON array, no other text. Each element must have:
+- "question_number": the question code visible (e.g. "14S1", "7S1", "Q3", or a number you can read)
+- "box_color": "green" (marks given), "red" (zero marks), "blue" (subtotal), "repeat" (REPEAT stamp), or "none" (NO box found — UNEVALUATED)
+- "marks": the number shown in the box as a string, or null if no box
+
+Example: [{"question_number":"14S1","box_color":"green","marks":"1"},{"question_number":"7S1","box_color":"red","marks":"0"},{"question_number":"11","box_color":"none","marks":null}]
+
+Also add one final summary object at the END of the array:
+{"summary": true, "blank_page": true/false, "has_repeat_stamp": true/false, "unevaluated_count": <number of answers with no box>}
+
+If the page appears blank (no student writing at all), output: [{"summary":true,"blank_page":true,"has_repeat_stamp":false,"unevaluated_count":0}]`;
 
     let visionResult = null;
     for (const model of VISION_MODELS) {
@@ -124,32 +145,51 @@ async function generateAIAdvice(paperId, visionPages = []) {
   const paper = await Paper.findById(paperId);
   const issues = await Issue.find({ paperId }).sort({ severity: 1 });
 
-  // Build vision summary string
+  // Build vision summary string from the enriched vision JSON
   let visionSummary = "";
   if (visionPages.length > 0) {
-    const visionLines = visionPages
-      .filter((vp) => vp.questions.length > 0)
-      .map((vp) => {
-        const qList = vp.questions
-          .map((q) => `Q${q.question_number}(${q.box_color})`)
-          .join(", ");
-        return `  Page ${vp.pageNumber}: ${qList}`;
-      })
-      .join("\n");
+    const pageLines = [];
+    let totalUnevaluated = 0;
+    let totalRepeat = 0;
+    let totalBlank = 0;
+
+    for (const vp of visionPages) {
+      const summaryObj = vp.questions.find((q) => q.summary === true);
+      const questions  = vp.questions.filter((q) => !q.summary);
+
+      if (summaryObj?.blank_page) {
+        totalBlank++;
+        continue; // skip blank pages
+      }
+      if (summaryObj?.has_repeat_stamp) totalRepeat++;
+      if (summaryObj?.unevaluated_count) totalUnevaluated += summaryObj.unevaluated_count;
+
+      if (questions.length > 0) {
+        const qList = questions.map((q) => {
+          const mark = q.marks !== null && q.marks !== undefined ? `(${q.marks}pts)` : "";
+          const status = q.box_color === "none" ? "⚠️UNEVALUATED" : q.box_color.toUpperCase();
+          return `Q${q.question_number}:${status}${mark}`;
+        }).join(", ");
+        const repeatFlag = summaryObj?.has_repeat_stamp ? " [REPEAT STAMP]" : "";
+        pageLines.push(`  Page ${vp.pageNumber}${repeatFlag}: ${qList}`);
+      }
+    }
 
     const unevaluatedQs = visionPages.flatMap((vp) =>
       vp.questions
-        .filter((q) => q.box_color === "none")
+        .filter((q) => !q.summary && q.box_color === "none")
         .map((q) => `Page ${vp.pageNumber} Q${q.question_number}`)
     );
 
     visionSummary = `
-Vision AI Scan Results (question-level analysis):
-${visionLines || "  No question boxes detected by vision model."}
+Vision AI Scan Results (CBSE OSM box-level analysis):
+${pageLines.length > 0 ? pageLines.join("\n") : "  No annotation boxes detected."}
 
-Unevaluated questions detected by vision: ${
-      unevaluatedQs.length > 0 ? unevaluatedQs.join(", ") : "None"
-    }`;
+Summary:
+- Blank pages (no student writing): ${totalBlank}
+- Pages with REPEAT ANS+ stamp: ${totalRepeat}
+- Total unevaluated answers (no box): ${totalUnevaluated}
+- Specific unevaluated questions: ${unevaluatedQs.length > 0 ? unevaluatedQs.join(", ") : "None"}`;
   }
 
   // No issues at all and no vision anomalies
