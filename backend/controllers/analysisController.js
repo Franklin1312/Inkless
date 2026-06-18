@@ -123,11 +123,44 @@ async function runAnalysisPipeline(paperId) {
 
       const questions = await analyzePageVision(imagePath);
       visionPages.push({ pageNumber: cp.page_number, questions });
-      console.log(`[Vision] Page ${cp.page_number}: found ${questions.length} question(s)`);
 
-      // Rate-limit pause between pages (free tier ~10 req/min)
+      // ── Post-process vision result for immediate issue creation ──────────
+      const summaryObj = questions.find((q) => q.summary === true);
+
+      // Flag: CV says content present, but vision model says blank page
+      if (summaryObj?.blank_page && cp.content_density > 0.05) {
+        await Issue.create({
+          paperId,
+          type: "content_marked_blank",
+          severity: "high",
+          pageNumber: cp.page_number,
+          contentDensity: cp.content_density,
+          details: `Page ${cp.page_number} has significant student writing (content density: ${(cp.content_density * 100).toFixed(1)}%) but appears to have been treated as a blank page — no evaluator annotations were detected. This answer may have been skipped entirely.`,
+        });
+      }
+
+      // Flag: REPEAT ANS+ stamp found by vision on this page
+      if (summaryObj?.has_repeat_stamp) {
+        // Avoid duplicates if OpenCV already caught it via annotMap
+        const alreadyFlagged = await Issue.findOne({
+          paperId, type: "repeat_stamp", pageNumber: cp.page_number,
+        });
+        if (!alreadyFlagged) {
+          await Issue.create({
+            paperId,
+            type: "repeat_stamp",
+            severity: "high",
+            pageNumber: cp.page_number,
+            details: `Page ${cp.page_number} has a REPEAT ANS+ stamp detected by Vision AI. Answer was flagged as a duplicate and may have been disqualified.`,
+          });
+        }
+      }
+
+      console.log(`[Vision] Page ${cp.page_number}: found ${questions.filter((q) => !q.summary).length} question(s)`);
+
+      // Gemini free tier = 10 RPM → wait 7s between calls to stay safe
       if (contentPages.indexOf(cp) < contentPages.length - 1) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 7000));
       }
     }
 
@@ -209,7 +242,25 @@ async function runAnalysisPipeline(paperId) {
           details: `Page ${pageNum} contains a "P.T.O." or "Contd." marker but no supplement pages were found. Answer may be incomplete in the evaluated copy.`,
         });
       }
-    }
+
+      // Type C: Content present but blurred AND marks were awarded → suspicious
+      if (
+        contentPage.has_content &&
+        blurPage?.is_blurred &&
+        annotPage?.annotations?.length > 0 &&
+        !annotPage?.all_zeros
+      ) {
+        await Issue.create({
+          paperId,
+          type: "blur_marks_awarded",
+          severity: "high",
+          pageNumber: pageNum,
+          blurScore: blurPage.blur_score,
+          contentDensity: contentPage.content_density,
+          details: `Page ${pageNum} has a blur score of ${blurPage.blur_score.toFixed(2)} (poor scan quality) but marks were still awarded. The evaluator may not have been able to clearly read this answer before grading.`,
+        });
+      }
+    } // end for contentPage loop
 
     // Arithmetic errors — check blue box totals
     for (const annotPage of annotationData.pages) {
@@ -257,7 +308,22 @@ async function runAnalysisPipeline(paperId) {
 
     // ── PHASE 6: Trust score ────────────────────────────────────────────────
     await updateStatus(paperId, "calculating_score");
-    const { trustScore, breakdown } = await calculateTrustScore(paperId);
+
+    // Compute page-level stats for ratio-based trust metrics
+    const totalContentPages   = contentData.pages.filter((p) => p.has_content).length;
+    const unevaluatedPageNums = new Set(
+      (await Issue.find({ paperId, type: "unevaluated_page" })).map((i) => i.pageNumber)
+    );
+    const unevaluatedPages    = unevaluatedPageNums.size;
+    const totalAnnotatedPages = annotationData.pages.filter(
+      (p) => p.annotations && p.annotations.length > 0
+    ).length;
+
+    const { trustScore, breakdown } = await calculateTrustScore(paperId, {
+      totalContentPages,
+      unevaluatedPages,
+      totalAnnotatedPages,
+    });
     await Paper.findByIdAndUpdate(paperId, {
       trustScore,
       trustBreakdown: breakdown,

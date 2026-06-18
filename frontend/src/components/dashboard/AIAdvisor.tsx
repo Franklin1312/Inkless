@@ -10,7 +10,25 @@ interface Props {
 }
 
 export default function AIAdvisor({ advice, isProcessing, issueCount, trustScore }: Props) {
-  const shouldReeval = trustScore !== null && trustScore < 75;
+  // Derive verdict from the AI's actual text first (most accurate)
+  // Then fall back to issue count and trust score
+  const adviceLower = (advice || "").toLowerCase();
+  const aiSaysReeval =
+    adviceLower.includes("re-evaluation is recommended") ||
+    adviceLower.includes("re-evaluation is strongly recommended") ||
+    adviceLower.includes("strongly recommended") ||
+    adviceLower.includes("recommend re-evaluation") ||
+    adviceLower.includes("revaluation is recommended");
+  const aiSaysOk =
+    adviceLower.includes("re-evaluation is not recommended") ||
+    adviceLower.includes("evaluation appears correct") ||
+    adviceLower.includes("no re-evaluation") ||
+    adviceLower.includes("correctly evaluated");
+
+  const shouldReeval =
+    aiSaysReeval ||
+    (!aiSaysOk && issueCount > 0) ||
+    (!aiSaysOk && trustScore !== null && trustScore < 70);
 
   return (
     <div className="card p-6 h-full flex flex-col">

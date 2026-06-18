@@ -4,15 +4,17 @@ import { useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronUp, FileX, Eye, Calculator, Stamp, BookOpen } from "lucide-react";
 
 const ISSUE_META: Record<string, { label: string; icon: any; color: string }> = {
-  unevaluated_page:    { label: "Unevaluated Page",     icon: FileX,        color: "red" },
-  blur_penalized:      { label: "Blur-Penalized Answer", icon: Eye,          color: "red" },
-  missing_page:        { label: "Missing Page",          icon: BookOpen,     color: "red" },
-  anomalous_zero:      { label: "Anomalous Zero",        icon: AlertTriangle,color: "orange" },
-  arithmetic_error:    { label: "Arithmetic Error",      icon: Calculator,   color: "orange" },
-  repeat_stamp:        { label: "REPEAT Stamp",          icon: Stamp,        color: "orange" },
-  supplement_missing:  { label: "Supplement Missing",    icon: FileX,        color: "red" },
-  wrong_sheet:         { label: "Wrong Answer Sheet",    icon: AlertTriangle,color: "red" },
-  mark_mismatch:       { label: "Mark Mismatch",         icon: Calculator,   color: "orange" },
+  unevaluated_page:     { label: "Unevaluated Page",         icon: FileX,        color: "red" },
+  blur_penalized:       { label: "Blur-Penalized Answer",    icon: Eye,          color: "red" },
+  blur_marks_awarded:   { label: "Blur: Marks Awarded",      icon: Eye,          color: "violet" },
+  missing_page:         { label: "Missing Page",             icon: BookOpen,     color: "red" },
+  anomalous_zero:       { label: "Anomalous Zero",           icon: AlertTriangle, color: "orange" },
+  arithmetic_error:     { label: "Arithmetic Error",         icon: Calculator,   color: "orange" },
+  repeat_stamp:         { label: "REPEAT Stamp",             icon: Stamp,        color: "violet" },
+  content_marked_blank: { label: "Content Marked as Blank",  icon: FileX,        color: "gray" },
+  supplement_missing:   { label: "Supplement Missing",       icon: FileX,        color: "red" },
+  wrong_sheet:          { label: "Wrong Answer Sheet",       icon: AlertTriangle, color: "red" },
+  mark_mismatch:        { label: "Mark Mismatch",            icon: Calculator,   color: "orange" },
 };
 
 interface Issue {
@@ -89,11 +91,15 @@ export default function IssuesPanel({ issues }: Props) {
               >
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5
                   ${meta.color === "red"    ? "bg-red-50"    :
-                    meta.color === "orange" ? "bg-orange-50" : "bg-ink-100"}`}
+                    meta.color === "orange" ? "bg-orange-50" :
+                    meta.color === "violet" ? "bg-violet-50" :
+                    meta.color === "gray"   ? "bg-gray-100"  : "bg-ink-100"}`}
                 >
                   <Icon className={`w-4 h-4
                     ${meta.color === "red"    ? "text-red-600"    :
-                      meta.color === "orange" ? "text-orange-600" : "text-ink-500"}`}
+                      meta.color === "orange" ? "text-orange-600" :
+                      meta.color === "violet" ? "text-violet-600" :
+                      meta.color === "gray"   ? "text-gray-500"   : "text-ink-500"}`}
                   />
                 </div>
 

@@ -126,12 +126,14 @@ Frontend runs on: http://localhost:3000
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/inkless
-OPENROUTER_API_KEY=sk-or-...your key here...
+GEMINI_API_KEY=your_gemini_api_key_here
 UPLOADS_DIR=./uploads
 PROCESSED_DIR=./processed
 ```
 
-Get a free OpenRouter key at: https://openrouter.ai/keys
+Get a **free** Gemini API key (no credit card) at: https://aistudio.google.com/apikey
+
+Free tier limits: **1,500 requests/day**, 10 RPM — more than enough for auditing answer sheets.
 
 ---
 
@@ -235,8 +237,8 @@ This means if anyone modifies a MongoDB record after the fact, the hash chain wi
 | Database | MongoDB |
 | CV | OpenCV, PyMuPDF |
 | OCR | Tesseract (optional) |
-| Vision AI | NVIDIA Nemotron Nano Omni 30B (via OpenRouter, free) |
-| Reasoning AI | NVIDIA Nemotron Ultra 550B (via OpenRouter, free) |
+| Vision AI | Google Gemini 2.5 Flash (free, 1500 req/day) |
+| Reasoning AI | Google Gemini 2.5 Flash (same model, text-only) |
 | Audit | SHA-256 hash chaining |
 | Viewer | React-Konva canvas |
 

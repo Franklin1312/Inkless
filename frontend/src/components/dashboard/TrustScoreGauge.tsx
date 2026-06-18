@@ -12,23 +12,23 @@ interface Props {
 }
 
 const CATEGORIES = [
-  { key: "scanQuality",            label: "Scan Quality",    weight: "20%" },
-  { key: "pageIntegrity",          label: "Page Integrity",  weight: "25%" },
-  { key: "evaluationCompleteness", label: "Eval Coverage",   weight: "35%" },
-  { key: "markAccuracy",           label: "Mark Accuracy",   weight: "20%" },
+  { key: "scanQuality",            label: "Scan Quality",       weight: "20%" },
+  { key: "pageIntegrity",          label: "Page Integrity",     weight: "25%" },
+  { key: "evaluationCompleteness", label: "Eval Completeness",  weight: "35%" },
+  { key: "markAccuracy",           label: "Mark Accuracy",      weight: "20%" },
 ];
 
 function getScoreColor(score: number | null) {
   if (score === null) return { stroke: "#CBD5E1", text: "text-ink-400" };
   if (score >= 80)    return { stroke: "#16A34A", text: "text-green-700" };
-  if (score >= 50)    return { stroke: "#D97706", text: "text-amber-700" };
+  if (score >= 55)    return { stroke: "#D97706", text: "text-amber-700" };
   return               { stroke: "#DC2626", text: "text-red-700" };
 }
 
 function getScoreLabel(score: number | null) {
   if (score === null) return "Calculating...";
   if (score >= 80)    return "Low Risk";
-  if (score >= 50)    return "Review Recommended";
+  if (score >= 55)    return "Review Recommended";
   return               "Re-evaluation Recommended";
 }
 

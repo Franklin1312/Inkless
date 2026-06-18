@@ -1,22 +1,23 @@
 const https = require("https");
 const fs = require("fs");
-const path = require("path");
 const Issue = require("../models/Issue");
 const Paper = require("../models/Paper");
 
-// ─── Core HTTP helper for OpenRouter ────────────────────────────────────────
-function openRouterRequest(bodyObj, timeoutMs = 30000) {
+// ─── Core HTTP helper for Google Gemini ─────────────────────────────────────
+// Free tier: 10 RPM, 1500 requests/day, 250K TPM — no credit card needed
+// Get your free API key at: https://aistudio.google.com/apikey
+function geminiRequest(model, parts, timeoutMs = 45000) {
   return new Promise((resolve, reject) => {
+    const bodyObj = { contents: [{ parts }] };
     const body = JSON.stringify(bodyObj);
+    const apiKey = process.env.GEMINI_API_KEY;
+
     const options = {
-      hostname: "openrouter.ai",
-      path: "/api/v1/chat/completions",
+      hostname: "generativelanguage.googleapis.com",
+      path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Inkless Audit System",
         "Content-Length": Buffer.byteLength(body),
       },
     };
@@ -27,15 +28,18 @@ function openRouterRequest(bodyObj, timeoutMs = 30000) {
       res.on("end", () => {
         try {
           const parsed = JSON.parse(data);
+
+          // Handle API errors
           if (parsed.error) {
-            console.error("OpenRouter error response:", JSON.stringify(parsed.error));
-            return reject(new Error(`OpenRouter: ${parsed.error.message || JSON.stringify(parsed.error)}`));
+            console.error("Gemini API error:", JSON.stringify(parsed.error));
+            return reject(new Error(`Gemini: ${parsed.error.message || JSON.stringify(parsed.error)}`));
           }
-          const text = parsed.choices?.[0]?.message?.content;
-          if (!text) return reject(new Error("Empty response from OpenRouter"));
+
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) return reject(new Error("Empty response from Gemini"));
           resolve(text.trim());
         } catch (e) {
-          reject(new Error(`Failed to parse OpenRouter response: ${e.message}`));
+          reject(new Error(`Failed to parse Gemini response: ${e.message}`));
         }
       });
     });
@@ -43,7 +47,7 @@ function openRouterRequest(bodyObj, timeoutMs = 30000) {
     req.on("error", reject);
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error("OpenRouter request timed out"));
+      reject(new Error("Gemini request timed out"));
     });
     req.setTimeout(timeoutMs);
     req.write(body);
@@ -52,17 +56,11 @@ function openRouterRequest(bodyObj, timeoutMs = 30000) {
 }
 
 // ─── STEP 1: Vision Extraction ───────────────────────────────────────────────
-// Sends a page image to the Nano Omni vision model and extracts
+// Sends a page image to Gemini Flash (free, vision-capable) and extracts
 // structured JSON: which question numbers exist and what color their box is.
-// Images are resized to ≤1024px wide before sending to keep payload manageable.
 async function analyzePageVision(imagePath) {
-  const VISION_MODELS = [
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "nex-agi/nex-n2-pro:free",
-  ];
-
   try {
-    // Resize image to max 1024px wide to reduce base64 payload size
+    // Read and encode image as base64
     let imageBuffer;
     try {
       const sharp = require("sharp");
@@ -76,57 +74,46 @@ async function analyzePageVision(imagePath) {
     }
 
     const base64Image = imageBuffer.toString("base64");
-    const mimeType = "image/jpeg";
 
     const visionPrompt = `This is a page from a CBSE Class 12 answer sheet evaluated using the OSM (Online Subjective Marks) system.
 
 The evaluator leaves colored rectangular annotation boxes on the page:
-- GREEN box with a checkmark (✓) and a number = marks awarded for that question (e.g. "✓ 1 14S1" means 1 mark for question 14)
-- RED box with 0 = zero marks given (e.g. "0 7S1" means 0 marks for question 7)  
-- BLUE box with a sub-total = partial marks tally
-- "REPEAT ANS+" stamp = answer was flagged as a repeated/duplicate and disqualified
-- Student handwriting with NO colored box nearby = the answer was NEVER evaluated by the examiner
+- GREEN box with a checkmark (✓) and a number = marks awarded. The student answered correctly. This is NORMAL and fine.
+- RED box with 0 = zero marks given. The student answered INCORRECTLY. The evaluator DID evaluate this question. This is NORMAL and fine — it means the answer was wrong, NOT that it was skipped.
+- BLUE box with a sub-total = partial marks tally. NORMAL.
+- "REPEAT ANS+" stamp = answer flagged as a repeated/duplicate and disqualified. This IS an issue.
+- Student handwriting with NO colored box at all nearby = the answer was NEVER evaluated by the examiner. This IS an issue.
 
-Your task: Look at this page and identify the evaluation status of each visible answer section.
+IMPORTANT: A RED box (zero marks) is NOT a problem. The evaluator checked and gave 0 because the answer was wrong. Only flag answers where there is NO box at all.
+
+Your task: Identify the evaluation status of each visible answer on this page.
 
 Output ONLY a valid JSON array, no other text. Each element must have:
-- "question_number": the question code visible (e.g. "14S1", "7S1", "Q3", or a number you can read)
-- "box_color": "green" (marks given), "red" (zero marks), "blue" (subtotal), "repeat" (REPEAT stamp), or "none" (NO box found — UNEVALUATED)
+- "question_number": the question code (e.g. "14S1", "7S1", "Q3")
+- "box_color": "green" (correct answer), "red" (wrong answer, zero marks — EVALUATED), "blue" (subtotal), "repeat" (REPEAT stamp — issue), or "none" (NO box found — UNEVALUATED, this is the only real issue)
 - "marks": the number shown in the box as a string, or null if no box
 
 Example: [{"question_number":"14S1","box_color":"green","marks":"1"},{"question_number":"7S1","box_color":"red","marks":"0"},{"question_number":"11","box_color":"none","marks":null}]
 
 Also add one final summary object at the END of the array:
-{"summary": true, "blank_page": true/false, "has_repeat_stamp": true/false, "unevaluated_count": <number of answers with no box>}
+{"summary": true, "blank_page": true/false, "has_repeat_stamp": true/false, "unevaluated_count": <number of answers with NO box — do NOT count red boxes as unevaluated>}
 
 If the page appears blank (no student writing at all), output: [{"summary":true,"blank_page":true,"has_repeat_stamp":false,"unevaluated_count":0}]`;
 
-    let visionResult = null;
-    for (const model of VISION_MODELS) {
-      try {
-        visionResult = await openRouterRequest({
-          model,
-          max_tokens: 800,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image_url",
-                  image_url: { url: `data:${mimeType};base64,${base64Image}` },
-                },
-                { type: "text", text: visionPrompt },
-              ],
-            },
-          ],
-        }, 45000);
-        break; // success — stop trying fallback models
-      } catch (modelErr) {
-        console.warn(`[Vision] Model ${model} failed: ${modelErr.message} — trying next...`);
-      }
-    }
-
-    if (!visionResult) return [];
+    // gemini-2.5-flash supports vision and is free tier eligible
+    const visionResult = await geminiRequest(
+      "gemini-2.5-flash",
+      [
+        {
+          inline_data: {
+            mime_type: "image/jpeg",
+            data: base64Image,
+          },
+        },
+        { text: visionPrompt },
+      ],
+      45000
+    );
 
     // Extract JSON array from the response (model may wrap it in markdown)
     const jsonMatch = visionResult.match(/\[[\s\S]*\]/);
@@ -139,7 +126,7 @@ If the page appears blank (no student writing at all), output: [{"summary":true,
 }
 
 // ─── STEP 3: Reasoning & Advice ─────────────────────────────────────────────
-// Passes the aggregated vision JSON + existing CV issues to the Ultra model
+// Passes the aggregated vision JSON + existing CV issues to Gemini Flash
 // for a professional audit recommendation with teacher tips.
 async function generateAIAdvice(paperId, visionPages = []) {
   const paper = await Paper.findById(paperId);
@@ -155,11 +142,11 @@ async function generateAIAdvice(paperId, visionPages = []) {
 
     for (const vp of visionPages) {
       const summaryObj = vp.questions.find((q) => q.summary === true);
-      const questions  = vp.questions.filter((q) => !q.summary);
+      const questions = vp.questions.filter((q) => !q.summary);
 
       if (summaryObj?.blank_page) {
         totalBlank++;
-        continue; // skip blank pages
+        continue;
       }
       if (summaryObj?.has_repeat_stamp) totalRepeat++;
       if (summaryObj?.unevaluated_count) totalUnevaluated += summaryObj.unevaluated_count;
@@ -214,23 +201,44 @@ ${visionSummary}
 CV Pipeline Issues:
 ${issuesSummary}
 
-Your task has two parts:
-1. Write a professional 2-3 sentence audit recommendation for the student. State clearly whether re-evaluation is recommended and why. Use precise, factual language — this may be submitted to CBSE as evidence.
-2. Then write exactly 3 practical tips for the evaluator to improve their grading process for future papers. Label them "Tip 1:", "Tip 2:", "Tip 3:".
+CRITICAL RULES FOR YOUR RESPONSE:
+- A RED box (0 marks) in OSM means the evaluator DID check the answer and gave zero because it was WRONG. This is completely normal and should NOT be flagged as an issue.
+- Only recommend re-evaluation if there is evidence of: (a) a page with student writing but NO evaluator box at all, (b) a blurred page that may not have been readable, (c) an arithmetic error in the totals, (d) a REPEAT ANS+ stamp that may have been wrongly applied, (e) a "content_marked_blank" issue where the CV detected content but the page was skipped, or (f) a "blur_marks_awarded" issue where marks were given despite poor scan quality.
+- If the trust score is high (≥80) and no CV issues were found and no unevaluated pages exist, state clearly that the evaluation appears correct and re-evaluation is NOT recommended.
+- Do NOT suggest re-evaluation simply because some answers received zero marks — zero marks for wrong answers is correct grading.
+- For "content_marked_blank" issues: flag that an answer page may have been skipped entirely.
+- For "blur_marks_awarded" issues: flag that the blurred page quality may have affected scoring fairness — the evaluator may not have been able to read the answer clearly before awarding marks.
 
-Write in plain paragraphs only. Do not use bullet points or markdown.`;
+Your task: Write a professional 3-4 sentence audit verdict. Name the specific pages and issue types found. State clearly whether re-evaluation is recommended and the exact reason(s). If the paper appears correctly evaluated, say so explicitly. Use precise, factual language — this may be submitted to CBSE as evidence. Write in plain paragraphs only. Do not use bullet points, markdown, or tips.`;
 
   try {
-    return await openRouterRequest({
-      model: "nvidia/nemotron-3-ultra-550b-a55b:free",
-      max_tokens: 800,
-      messages: [{ role: "user", content: prompt }],
-    }, 20000);
+    return await geminiRequest(
+      "gemini-2.5-flash",
+      [{ text: prompt }],
+      30000
+    );
   } catch (err) {
-    console.error("OpenRouter reasoning API error:", err.message);
-    // Fallback summary if Ultra model fails
-    const critCount = issues.filter((i) => i.severity === "critical").length;
-    return `${issues.length} issue(s) were detected during automated analysis, including ${critCount} critical issue(s). Manual review and re-evaluation is recommended. Tip 1: Ensure all pages are evaluated before submission. Tip 2: Use clearly legible marks to avoid misinterpretation. Tip 3: Double-check arithmetic totals on the front cover.`;
+    console.error("Gemini reasoning API error:", err.message);
+    // Fallback: build a specific summary from actual issue data instead of a generic message
+    const critIssues = issues.filter((i) => i.severity === "critical");
+    const highIssues = issues.filter((i) => i.severity === "high");
+
+    if (issues.length === 0) {
+      return "No issues were detected in this answer sheet during automated analysis. All pages appear to have been evaluated and the evaluation appears correct. Re-evaluation is not recommended at this time.";
+    }
+
+    const issueLines = issues
+      .slice(0, 6) // cap at 6 to keep message concise
+      .map((i) => `Page ${i.pageNumber}: ${i.type.replace(/_/g, " ")} — ${i.details}`)
+      .join(" ");
+
+    const verdict = critIssues.length > 0
+      ? "Re-evaluation is strongly recommended."
+      : highIssues.length > 0
+      ? "A review of this answer sheet is recommended."
+      : "Minor issues were found; a spot-check is advised.";
+
+    return `${verdict} The automated audit detected ${issues.length} issue(s) (${critIssues.length} critical, ${highIssues.length} high): ${issueLines}`;
   }
 }
 
