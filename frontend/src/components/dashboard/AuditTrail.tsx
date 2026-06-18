@@ -18,15 +18,16 @@ interface Props {
 }
 
 const EVENT_LABELS: Record<string, string> = {
-  uploaded:                "File uploaded",
-  pages_extracted:         "Pages extracted",
-  blur_check_complete:     "Blur check complete",
-  annotations_detected:    "Annotations detected",
-  content_detected:        "Content detection complete",
-  cross_reference_complete:"Cross-reference complete",
-  trust_score_calculated:  "Trust score calculated",
-  ai_advice_generated:     "AI advice generated",
-  analysis_complete:       "Analysis complete",
+  uploaded:                 "File uploaded",
+  pages_extracted:          "Pages extracted",
+  blur_check_complete:      "Blur check complete",
+  annotations_detected:     "Annotations detected",
+  content_detected:         "Content detection complete",
+  vision_analysis_complete: "Vision AI analysis complete",
+  cross_reference_complete: "Cross-reference complete",
+  trust_score_calculated:   "Trust score calculated",
+  ai_advice_generated:      "AI advice generated",
+  analysis_complete:        "Analysis complete",
 };
 
 export default function AuditTrail({ paperId, events }: Props) {
