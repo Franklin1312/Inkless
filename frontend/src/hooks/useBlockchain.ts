@@ -56,7 +56,13 @@ export function useBlockchain() {
     if (typeof window === "undefined" || !(window as any).ethereum) {
       throw new Error("MetaMask not found. Please install MetaMask.");
     }
-    return (window as any).ethereum;
+    const eth = (window as any).ethereum;
+    // Handle case where multiple wallets (like Phantom) overwrite window.ethereum
+    if (eth.providers?.length) {
+      const mm = eth.providers.find((p: any) => p.isMetaMask);
+      if (mm) return mm;
+    }
+    return eth;
   };
 
   // ─── Connect Wallet ──────────────────────────────────────────────────────────
@@ -64,10 +70,12 @@ export function useBlockchain() {
   const connect = useCallback(async () => {
     const ethereum = getProvider();
     const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+    const address = accounts[0];
+
     const chainIdHex = await ethereum.request({ method: "eth_chainId" });
     const chainId = parseInt(chainIdHex, 16);
-    setWallet({ address: accounts[0], chainId, isConnected: true, isCorrectNetwork: chainId === CHAIN_ID });
-    return accounts[0];
+    setWallet({ address, chainId, isConnected: true, isCorrectNetwork: chainId === CHAIN_ID });
+    return address;
   }, []);
 
   // ─── Switch to Sepolia ───────────────────────────────────────────────────────
@@ -171,11 +179,11 @@ export function useBlockchain() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !(window as any).ethereum) return;
-    const eth = (window as any).ethereum;
+    const eth = getProvider();
 
     const onAccounts = (accounts: string[]) => {
-      if (accounts.length === 0) setWallet({ address: null, chainId: null, isConnected: false, isCorrectNetwork: false });
-      else setWallet(w => ({ ...w, address: accounts[0] }));
+      // If the user manually changes accounts in MetaMask, force them to re-authenticate
+      setWallet({ address: null, chainId: null, isConnected: false, isCorrectNetwork: false });
     };
     const onChain = (hex: string) => {
       const chainId = parseInt(hex, 16);
@@ -184,15 +192,6 @@ export function useBlockchain() {
 
     eth.on("accountsChanged", onAccounts);
     eth.on("chainChanged", onChain);
-
-    eth.request({ method: "eth_accounts" }).then((accounts: string[]) => {
-      if (accounts.length > 0) {
-        eth.request({ method: "eth_chainId" }).then((hex: string) => {
-          const chainId = parseInt(hex, 16);
-          setWallet({ address: accounts[0], chainId, isConnected: true, isCorrectNetwork: chainId === CHAIN_ID });
-        });
-      }
-    });
 
     return () => {
       eth.removeListener("accountsChanged", onAccounts);

@@ -8,6 +8,7 @@ import ProcessingTimeline from "@/components/dashboard/ProcessingTimeline";
 import IssuesPanel from "@/components/dashboard/IssuesPanel";
 import AIAdvisor from "@/components/dashboard/AIAdvisor";
 import AuditTrail from "@/components/dashboard/AuditTrail";
+import BlockchainSubmit from "@/components/dashboard/BlockchainSubmit";
 import dynamic from "next/dynamic";
 const AnswerSheetViewer = dynamic(
   () => import("@/components/viewer/AnswerSheetViewer"),
@@ -193,7 +194,28 @@ export default function AnalysisPage() {
             )}
 
             {activeTab === "audit" && (
-              <AuditTrail paperId={paperId} events={data.events || []} />
+              <div className="space-y-6">
+                <BlockchainSubmit
+                  evaluationData={data.paper.status === "complete" ? {
+                    studentRollNumber: data.paper.rollNumber || "Unknown",
+                    evaluatorId: `CBSE-${data.paper.rollNumber || "SYS"}`,
+                    subject: data.paper.subject || "Unknown",
+                    examYear: String(new Date().getFullYear()),
+                    totalMarksAwarded: Math.round(data.paper.trustScore || 0),
+                    totalMaxMarks: 100,
+                    questions: (data.issues || []).map((issue: any, i: number) => ({
+                      code: `Q${i + 1}`,
+                      marksAwarded: issue.detectedMark ?? 0,
+                      maxMarks: issue.expectedMark ?? 10,
+                      boxColor: issue.type === "arithmetic_error" ? "red"
+                        : issue.type === "unevaluated_page" ? "violet"
+                        : issue.type === "blur_penalized" ? "red"
+                        : "green",
+                    })),
+                  } : null}
+                />
+                <AuditTrail paperId={paperId} events={data.events || []} />
+              </div>
             )}
           </div>
         </>

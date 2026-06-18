@@ -1,0 +1,10 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "contractName": "InklessAudit",
+  "contractAddress": "0xdE25F355f0628ab06A0839FD563FD6Fed298e2c0",
+  "deployerAddress": "0x45D246d7749936E61399E61Fc7e04e090aEDECE1",
+  "txHash": "0xe4d467851053cd674e06da8e7f67e41abb76e94da8e5f250009278e6719d98ea",
+  "deployedAt": "2026-06-18T13:50:38.399Z",
+  "explorerUrl": "https://sepolia.etherscan.io/address/0xdE25F355f0628ab06A0839FD563FD6Fed298e2c0"
+}

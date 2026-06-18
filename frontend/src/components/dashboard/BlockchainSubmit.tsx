@@ -86,7 +86,7 @@ export default function BlockchainSubmit({ evaluationData, onSuccess }: Props) {
     wallet.isConnected &&
     wallet.isCorrectNetwork &&
     txState.status === "idle" &&
-    (evaluationData?.questions?.length ?? 0) > 0;
+    evaluationData !== null;
 
   const handleSubmit = async () => {
     if (!evaluationData) return;

@@ -13,12 +13,14 @@ frontend/build/
 backend/uploads/
 backend/processed/
 
-# Environment Variables
+# Environment Variables — NEVER commit secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+# Hardhat .env contains PRIVATE_KEY — always ignore
+hardhat/.env
 
 # Python
 __pycache__/
@@ -59,3 +61,14 @@ Thumbs.db
 
 # Project specific PDF test files in root
 *.pdf
+
+# Hardhat / Blockchain artifacts (generated, do not commit)
+hardhat/artifacts/
+hardhat/cache/
+hardhat/typechain/
+hardhat/typechain-types/
+hardhat/coverage/
+hardhat/coverage.json
+
+# Hardhat deployment info (optional — remove if you want to track deployments)
+# hardhat/deployments/

@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Loader2,
 } from "lucide-react";
+import AuditVerifier from "@/components/dashboard/AuditVerifier";
 
 export default function HomePage() {
   const router = useRouter();
@@ -121,16 +122,25 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Upload Card */}
-      <section className="max-w-2xl mx-auto px-8 pb-24">
-        <div className="card p-8 animate-fade-up animate-delay-400">
-          <h2 className="font-display text-2xl font-semibold text-navy-900 mb-2">
-            Upload your answer sheet
-          </h2>
-          <p className="text-sm text-ink-500 font-body mb-8">
-            Upload the evaluated PDF you received from CBSE — the one with
-            evaluator marks overlaid.
-          </p>
+      {/* Dual card section */}
+      <section className="max-w-5xl mx-auto px-8 pb-24">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-up animate-delay-400">
+
+          {/* Student: Upload & Audit */}
+          <div className="card p-8 flex flex-col">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                <Search className="w-4 h-4 text-amber-700" />
+              </div>
+              <span className="text-xs font-bold font-body text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">For Verification</span>
+            </div>
+            <h2 className="font-display text-2xl font-semibold text-navy-900 mb-2">
+              Audit Answer Sheet
+            </h2>
+            <p className="text-sm text-ink-500 font-body mb-8 flex-1">
+              Upload the evaluated PDF the one with
+              evaluator marks overlaid.
+            </p>
 
           {/* Metadata */}
           <div className="grid grid-cols-2 gap-4 mb-6">
@@ -262,7 +272,69 @@ export default function HomePage() {
           <p className="text-center text-xs text-ink-400 mt-4 font-body">
             Your file is processed locally. No data is shared with CBSE or third parties.
           </p>
+          </div>{/* end student card */}
+
+          {/* Evaluator: OSM Marking Tool */}
+          <div className="flex flex-col rounded-2xl overflow-hidden border border-ink-200 bg-[#0d1117]">
+            <div className="p-8 flex flex-col flex-1">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 bg-blue-900/60 rounded-lg flex items-center justify-center border border-blue-700">
+                  <FileText className="w-4 h-4 text-blue-400" />
+                </div>
+                <span className="text-xs font-bold font-body text-blue-400 bg-blue-950 border border-blue-800 px-2 py-0.5 rounded-full">For Evaluation</span>
+              </div>
+              <h2 className="font-display text-2xl font-semibold text-white mb-2">
+                OSM Marking Tool
+              </h2>
+              <p className="text-sm text-slate-400 font-body mb-6 flex-1">
+                Place green award marks, red zeros, subtotals, REPEAT ANS+ stamps,
+                and blank-page markers directly onto any CBSE answer sheet PDF.
+                Export a fully annotated marked PDF or JSON audit report.
+              </p>
+
+              <div className="flex flex-wrap gap-2 mb-6">
+                {[
+                  { color: "bg-green-500", label: "✓ Award marks" },
+                  { color: "bg-red-500",   label: "0 Zero" },
+                  { color: "bg-blue-500",  label: "Σ Subtotal" },
+                  { color: "bg-purple-500",label: "REPEAT ANS+" },
+                  { color: "bg-gray-500",  label: "☐ Blank page" },
+                ].map(({ color, label }) => (
+                  <span key={label} className={`flex items-center gap-1.5 text-xs font-bold font-body text-white px-2.5 py-1 rounded-full bg-white/10`}>
+                    <span className={`w-2 h-2 rounded-full ${color}`} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+
+              <a
+                href="/osm-evaluator.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold font-body text-sm transition-colors"
+              >
+                Open OSM Evaluator
+                <ChevronRight className="w-4 h-4" />
+              </a>
+
+              <p className="text-center text-xs text-slate-600 mt-4 font-body">
+                All marks are computed locally — no data is uploaded.
+              </p>
+            </div>
+          </div>{/* end evaluator card */}
+
+        </div>{/* end grid */}
+      </section>
+
+      {/* Audit Verifier Tool */}
+      <section className="max-w-4xl mx-auto px-8 pb-24">
+        <div className="flex items-center gap-3 mb-6 justify-center text-center">
+          <Shield className="w-5 h-5 text-navy-600" />
+          <h2 className="font-display text-2xl font-semibold text-navy-900">
+            Verify an On-Chain Audit
+          </h2>
         </div>
+        <AuditVerifier />
       </section>
     </main>
   );

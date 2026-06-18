@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inkless — OSM Evaluator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--panel:#161b22;--border:#21262d;--border2:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#484f58;
+  --blue:#58a6ff;--green:#4ade80;--yellow:#facc15;--orange:#fb923c;--purple:#c084fc;
+  --ann-green:#28a745;--ann-red:#dc3545;--ann-blue:#0c7a9e;--ann-purple:#6f42c1;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* ── TOP BAR ── */
+#topbar{background:var(--panel);border-bottom:1px solid var(--border);padding:0 16px;height:48px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+#topbar .logo{font-size:15px;font-weight:800;color:var(--blue);letter-spacing:-0.5px}
+#topbar .logo span{color:var(--muted);font-weight:400}
+.tb-sep{width:1px;height:24px;background:var(--border)}
+#upload-btn{padding:6px 14px;background:#1f6feb22;border:1px solid #1f6feb;border-radius:6px;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+#upload-btn:hover{background:#1f6feb44}
+#file-input{display:none}
+#page-nav{display:flex;align-items:center;gap:6px;font-size:12px}
+#page-nav button{padding:4px 10px;background:var(--border);border:1px solid var(--border2);border-radius:5px;color:var(--text);cursor:pointer;font-size:12px}
+#page-nav button:hover{background:var(--border2)}
+#page-nav button:disabled{opacity:0.3;cursor:default}
+#page-info{color:var(--muted);min-width:70px;text-align:center}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+#export-btn{padding:6px 14px;background:#23863622;border:1px solid #238636;border-radius:6px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+#export-btn:hover{background:#23863644}
+#trust-badge{padding:4px 12px;border-radius:12px;font-size:11px;font-weight:700;background:#21262d;border:1px solid var(--border2)}
+
+/* ── MAIN LAYOUT ── */
+#main{display:flex;flex:1;overflow:hidden}
+
+/* ── LEFT: Questions ── */
+#qpanel{width:220px;min-width:220px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#qpanel-header{padding:10px 12px;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--blue)}
+#qlist{flex:1;overflow-y:auto;padding:6px}
+.sec-label{padding:6px 8px 2px;font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;opacity:.7}
+.sec-A{color:var(--blue)}.sec-B{color:var(--green)}.sec-C{color:var(--yellow)}.sec-D{color:var(--orange)}.sec-E{color:var(--purple)}
+.q-row{padding:5px 8px;border-radius:5px;cursor:pointer;display:flex;align-items:center;gap:6px;border:1px solid transparent;transition:all .12s;margin-bottom:1px}
+.q-row:hover{background:#21262d}
+.q-row.active{background:#21262d;border-color:var(--blue)}
+.q-dot{width:7px;height:7px;border-radius:50%;background:#30363d;flex-shrink:0}
+.q-dot.done{background:var(--green)}.q-dot.partial{background:var(--yellow)}.q-dot.blank{background:#6e7681}
+.q-label{font-size:11px;font-weight:600;color:#c9d1d9}
+.q-sub{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+.q-mk{font-size:10px;color:var(--muted);margin-left:auto;flex-shrink:0}
+.q-mk.done{color:var(--green)}
+
+/* ── CENTER: Canvas ── */
+#center{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#toolbar{background:var(--panel);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.tool-btn{padding:5px 11px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;border:1.5px solid;transition:all .12s;display:flex;align-items:center;gap:4px}
+.tool-btn .kb{font-size:9px;opacity:0.55;margin-left:2px}
+.t-green{border-color:#22c55e;color:#4ade80;background:#4ade8010}
+.t-green.active,.t-green:hover{background:#4ade80;color:#000}
+.t-red{border-color:#ef4444;color:#f87171;background:#f8717110}
+.t-red.active,.t-red:hover{background:#f87171;color:#000}
+.t-blue{border-color:#3b82f6;color:#60a5fa;background:#60a5fa10}
+.t-blue.active,.t-blue:hover{background:#60a5fa;color:#000}
+.t-purple{border-color:#a855f7;color:#c084fc;background:#c084fc10}
+.t-purple.active,.t-purple:hover{background:#c084fc;color:#000}
+.t-cross{border-color:#ef4444;color:#f87171;background:#f8717110}
+.t-cross.active,.t-cross:hover{background:#f87171;color:#000}
+.t-blank{border-color:#6e7681;color:#8b949e;background:#8b949e10}
+.t-blank.active,.t-blank:hover{background:#8b949e;color:#000}
+.t-sep{width:1px;height:24px;background:var(--border);margin:0 2px}
+.marks-row{display:flex;align-items:center;gap:6px}
+.marks-row label{font-size:11px;color:var(--muted)}
+.marks-row input{width:54px;padding:4px 6px;background:#0d1117;border:1px solid var(--border2);border-radius:5px;color:var(--text);font-size:12px;text-align:center}
+.marks-row input:focus{outline:none;border-color:var(--blue)}
+#code-select{padding:4px 8px;background:#0d1117;border:1px solid var(--border2);border-radius:5px;color:var(--text);font-size:11px;font-family:monospace;max-width:160px}
+#code-select:focus{outline:none;border-color:var(--blue)}
+
+#canvas-wrap{flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:24px;background:#0d1117}
+#sheet-container{position:relative;display:inline-block;cursor:crosshair;flex-shrink:0}
+#sheet-img{display:block;max-width:760px;width:100%;border-radius:3px;box-shadow:0 8px 40px #00000088;user-select:none;-webkit-user-drag:none}
+#sheet-canvas{display:block;max-width:760px;width:100%;border-radius:3px;box-shadow:0 8px 40px #00000088}
+#ann-layer{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.ann-el{position:absolute;pointer-events:all;cursor:default;z-index:10}
+.ann-box{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700;border:2px solid;white-space:nowrap;font-family:monospace;box-shadow:0 2px 8px #0006}
+.ann-box.green{background:#d4edda;border-color:#28a745;color:#155724}
+.ann-box.red{background:#f8d7da;border-color:#dc3545;color:#721c24}
+.ann-box.blue{background:#d1ecf1;border-color:#0c7a9e;color:#0c5460}
+.ann-box.purple{background:#e2d9f3;border-color:#6f42c1;color:#432874;font-style:italic}
+.ann-box .del-btn{font-size:9px;opacity:.45;cursor:pointer;margin-left:4px;pointer-events:all}
+.ann-box .del-btn:hover{opacity:1;color:#dc3545}
+.cross-circle{width:34px;height:34px;border-radius:50%;border:2.5px solid #dc3545;background:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#dc3545;cursor:pointer;box-shadow:0 2px 8px #0006}
+.blank-stamp{background:#fff;border:2.5px solid #6e7681;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase;box-shadow:0 2px 8px #0006}
+
+/* upload dropzone */
+#dropzone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;height:100%;min-height:400px;color:var(--muted)}
+#dropzone .dz-icon{font-size:56px}
+#dropzone h2{font-size:18px;font-weight:600;color:var(--text)}
+#dropzone p{font-size:13px;max-width:320px;text-align:center;line-height:1.6}
+#dropzone .dz-btn{padding:10px 24px;background:#1f6feb22;border:1px solid #1f6feb;border-radius:8px;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s}
+#dropzone .dz-btn:hover{background:#1f6feb44}
+.drag-over #canvas-wrap{border:2px dashed var(--blue)!important}
+
+/* ── RIGHT: Mark panel ── */
+#rpanel{width:250px;min-width:250px;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#rpanel-top{padding:10px 12px;border-bottom:1px solid var(--border)}
+.rp-label{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+#ann-log{flex:1;overflow-y:auto;padding:8px}
+.log-empty{font-size:11px;color:var(--dim);text-align:center;padding:20px 8px;line-height:1.7}
+.log-entry{background:#0d1117;border-radius:6px;padding:7px 10px;margin-bottom:5px;display:flex;align-items:center;gap:8px}
+.log-entry .le-bar{width:3px;height:100%;border-radius:2px;align-self:stretch;min-height:28px}
+.le-bar.green{background:#22c55e}.le-bar.red{background:#ef4444}.le-bar.blue{background:#3b82f6}.le-bar.purple,.le-bar.repeat{background:#a855f7}.le-bar.cross{background:#ef4444}.le-bar.blank{background:#6e7681}
+.log-entry .le-info{flex:1;min-width:0}
+.le-code{font-size:11px;font-family:monospace;color:#c9d1d9}
+.le-type{font-size:9px;color:var(--muted);text-transform:uppercase;margin-top:1px}
+.le-mark{font-size:14px;font-weight:700;flex-shrink:0}
+.le-del{font-size:11px;color:var(--dim);cursor:pointer;flex-shrink:0}
+.le-del:hover{color:#f87171}
+#subtotal-area{padding:0 8px 8px}
+.subtotal-box{background:#0d1117;border:1px solid #3b82f6;border-radius:5px;padding:7px 10px;font-size:11px;color:#60a5fa;font-family:monospace}
+#rpanel-bottom{padding:10px;border-top:1px solid var(--border)}
+.score-card{background:#21262d;border-radius:8px;padding:12px;text-align:center;margin-bottom:8px}
+.score-card .sc-label{font-size:10px;color:var(--muted)}
+.score-card .sc-val{font-size:32px;font-weight:800;color:var(--blue);line-height:1.1}
+.score-card .sc-max{font-size:11px;color:var(--muted)}
+.score-bar{height:4px;background:#30363d;border-radius:2px;overflow:hidden;margin-top:6px}
+.score-bar-fill{height:100%;border-radius:2px;transition:width .35s}
+.confirm-btn{width:100%;padding:10px;border-radius:7px;background:#238636;border:1px solid #2ea043;color:#fff;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s}
+.confirm-btn:hover{background:#2ea043}
+.confirmed-badge{text-align:center;font-size:11px;color:var(--green);margin-top:5px}
+
+/* score grid */
+#score-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:8px;border-top:1px solid var(--border)}
+.sg-cell{background:#21262d;border-radius:5px;padding:6px 8px}
+.sg-cell .sg-l{font-size:9px;color:var(--muted)}
+.sg-cell .sg-v{font-size:16px;font-weight:700}
+
+/* scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#0d1117}
+::-webkit-scrollbar-thumb{background:#21262d;border-radius:3px}
+
+/* toast */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--border2);color:var(--text);padding:8px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:all .25s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* loading overlay */
+#loading{position:fixed;inset:0;background:#0d1117cc;display:flex;align-items:center;justify-content:center;z-index:9998;display:none}
+#loading-inner{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:24px 32px;text-align:center}
+#loading-bar{width:200px;height:4px;background:#21262d;border-radius:2px;overflow:hidden;margin-top:12px}
+#loading-fill{height:100%;background:var(--blue);border-radius:2px;transition:width .2s}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo">⬡ Inkless <span>OSM Evaluator</span></div>
+  <div class="tb-sep"></div>
+  <button id="upload-btn" onclick="document.getElementById('file-input').click()">
+    📂 Upload Answer Sheet
+  </button>
+  <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp">
+  <div class="tb-sep"></div>
+  <div id="page-nav">
+    <button id="prev-page" onclick="changePage(-1)" disabled>◀</button>
+    <span id="page-info">No file</span>
+    <button id="next-page" onclick="changePage(1)" disabled>▶</button>
+  </div>
+  <div class="tb-right">
+    <span id="trust-badge" style="color:var(--muted)">Trust: —</span>
+    <button id="export-btn" onclick="exportReport()">⬇ JSON Report</button>
+    <button id="pdf-btn" onclick="exportMarkedPDF()" style="padding:6px 14px;background:#1f3a5f;border:1px solid #2d6a9f;border-radius:6px;color:#79b8ff;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s" onmouseover="this.style.background='#2d6a9f44'" onmouseout="this.style.background='#1f3a5f'">📄 Download Marked PDF</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT: Questions -->
+  <div id="qpanel">
+    <div id="qpanel-header">📋 Questions (SQP 2025-26)</div>
+    <div id="qlist"></div>
+  </div>
+
+  <!-- CENTER -->
+  <div id="center">
+    <div id="toolbar">
+      <button class="tool-btn t-green active" id="btn-green" onclick="setTool('green')">✓ Award<span class="kb">[1]</span></button>
+      <button class="tool-btn t-red"          id="btn-red"   onclick="setTool('red')">0 Zero<span class="kb">[2]</span></button>
+      <button class="tool-btn t-blue"         id="btn-blue"  onclick="setTool('blue')">Σ Subtotal<span class="kb">[3]</span></button>
+      <button class="tool-btn t-purple"       id="btn-repeat" onclick="setTool('repeat')">REPEAT ANS+<span class="kb">[4]</span></button>
+      <button class="tool-btn t-cross"        id="btn-cross" onclick="setTool('cross')">⊗ Wrong<span class="kb">[5]</span></button>
+      <button class="tool-btn t-blank"        id="btn-blank" onclick="setTool('blank')">☐ Blank Page<span class="kb">[6]</span></button>
+      <div class="t-sep"></div>
+      <div class="marks-row">
+        <label>Marks:</label>
+        <input type="number" id="marks-input" value="1" min="0" max="5" step="0.5">
+      </div>
+      <div class="t-sep"></div>
+      <select id="code-select" title="OSM Code"></select>
+    </div>
+
+    <div id="canvas-wrap" ondragover="event.preventDefault();document.body.classList.add('drag-over')"
+         ondragleave="document.body.classList.remove('drag-over')"
+         ondrop="handleDrop(event)">
+      <div id="dropzone">
+        <div class="dz-icon">📄</div>
+        <h2>Upload Answer Sheet</h2>
+        <p>Upload a PDF or image of the CBSE answer sheet. You can then place OSM annotation marks directly on top of it.</p>
+        <button class="dz-btn" onclick="document.getElementById('file-input').click()">Choose File (PDF / Image)</button>
+        <p style="font-size:11px;opacity:.5">or drag & drop here</p>
+      </div>
+      <!-- sheet content injected here -->
+    </div>
+  </div>
+
+  <!-- RIGHT: Mark Panel -->
+  <div id="rpanel">
+    <div id="rpanel-top">
+      <div class="rp-label">Current Question</div>
+      <div id="cq-name" style="font-size:14px;font-weight:700;color:var(--text)">—</div>
+      <div id="cq-topic" style="font-size:10px;color:var(--muted);margin-top:2px;line-height:1.5">Select a question from the list</div>
+    </div>
+    <div id="ann-log"><div class="log-empty">No annotations yet.<br>Upload a sheet and click to place marks.</div></div>
+    <div id="subtotal-area"></div>
+    <div id="rpanel-bottom">
+      <div class="score-card">
+        <div class="sc-label">Awarded this question</div>
+        <div class="sc-val" id="q-score">0</div>
+        <div class="sc-max" id="q-max">/ — max</div>
+        <div class="score-bar"><div class="score-bar-fill" id="q-bar" style="width:0%;background:var(--blue)"></div></div>
+      </div>
+      <button class="confirm-btn" onclick="confirmQuestion()">✓ Confirm &amp; Next →</button>
+      <div class="confirmed-badge" id="confirmed-badge" style="display:none"></div>
+    </div>
+    <div id="score-grid">
+      <div class="sg-cell"><div class="sg-l">Done</div><div class="sg-v" id="sg-done" style="color:var(--green)">0</div></div>
+      <div class="sg-cell"><div class="sg-l">Score</div><div class="sg-v" id="sg-score" style="color:var(--blue)">0</div></div>
+      <div class="sg-cell"><div class="sg-l">Left</div><div class="sg-v" id="sg-left" style="color:var(--yellow)">38</div></div>
+      <div class="sg-cell"><div class="sg-l">Max</div><div class="sg-v" style="color:var(--muted)">80</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="loading"><div id="loading-inner">
+  <div style="font-size:13px;color:var(--muted)">Loading PDF…</div>
+  <div id="loading-bar"><div id="loading-fill" style="width:0%"></div></div>
+</div></div>
+
+<script>
+// ── PDF.js setup ──────────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── Questions data ────────────────────────────────────────────────────────────
+const QUESTIONS = [
+  {id:'1', s:'A',m:1,t:'MCQ',   topic:'Inverse Trig — identify graph',               codes:[{c:'1S1',  mk:1}]},
+  {id:'2', s:'A',m:1,t:'MCQ',   topic:'Matrix dimensions m,n,p,q',                   codes:[{c:'2S1',  mk:1}]},
+  {id:'3', s:'A',m:1,t:'MCQ',   topic:'Skew-symmetric — (q+t)/(p+r)',                codes:[{c:'3S1',  mk:1}]},
+  {id:'4', s:'A',m:1,t:'MCQ',   topic:'adj A — value of A(adj A)',                   codes:[{c:'4S1',  mk:1}]},
+  {id:'5', s:'A',m:1,t:'MCQ',   topic:'Inverse of diagonal matrix',                  codes:[{c:'5S1',  mk:1}]},
+  {id:'6', s:'A',m:1,t:'MCQ',   topic:'Determinant cos67°sin67°/sin23°cos23°',       codes:[{c:'6S1',  mk:1}]},
+  {id:'7', s:'A',m:1,t:'MCQ',   topic:'Continuity — find k',                         codes:[{c:'7S1',  mk:1}]},
+  {id:'8', s:'A',m:1,t:'MCQ',   topic:"f(x)=x·tan⁻¹x — find f'(1)",                 codes:[{c:'8S1',  mk:1}]},
+  {id:'9', s:'A',m:1,t:'MCQ',   topic:'f(x)=10−x−2x² increasing interval',          codes:[{c:'9S1',  mk:1}]},
+  {id:'10',s:'A',m:1,t:'MCQ',   topic:'xdx+ydy=0 — family of curves',               codes:[{c:'10S1', mk:1}]},
+  {id:'11',s:'A',m:1,t:'MCQ',   topic:'∫ property f(a+b−x)=f(x)',                   codes:[{c:'11S1', mk:1}]},
+  {id:'12',s:'A',m:1,t:'MCQ',   topic:'∫x³sin⁴(x⁴)cos(x⁴)dx — find a',             codes:[{c:'12S1', mk:1}]},
+  {id:'13',s:'A',m:1,t:'MCQ',   topic:'Vector projection on metro track',            codes:[{c:'13S1', mk:1}]},
+  {id:'14',s:'A',m:1,t:'MCQ',   topic:'Distance of 3î+4ĵ+5k̂ from y-axis',          codes:[{c:'14S1', mk:1}]},
+  {id:'15',s:'A',m:1,t:'MCQ',   topic:'(2a·î)î−(b·ĵ)ĵ+(c·k̂)k̂',                   codes:[{c:'15S1', mk:1}]},
+  {id:'16',s:'A',m:1,t:'MCQ',   topic:'LPP — missing constraint',                   codes:[{c:'16S1', mk:1}]},
+  {id:'17',s:'A',m:1,t:'MCQ',   topic:'LPP — other minimum point',                  codes:[{c:'17S1', mk:1}]},
+  {id:'18',s:'A',m:1,t:'MCQ',   topic:'Probability — guess 6-digit PIN',            codes:[{c:'18S1', mk:1}]},
+  {id:'19',s:'A',m:1,t:'A-R',   topic:'sin⁻¹(√3/2)+tan⁻¹1−sec⁻¹(√2)=π/4',         codes:[{c:'19S1', mk:1}]},
+  {id:'20',s:'A',m:1,t:'A-R',   topic:'r⃗×(a⃗+b⃗)=0 ⟹ r⃗⊥ a⃗×b⃗',                    codes:[{c:'20S1', mk:1}]},
+  {id:'21',s:'B',m:2,t:'VSA',   topic:'tan(tan⁻¹(−1)+π/3)  OR  domain cos⁻¹(3x−2)',codes:[{c:'21S1',mk:2,l:'21A'},{c:'21ORS1',mk:2,l:'21B-OR'}]},
+  {id:'22',s:'B',m:2,t:'VSA',   topic:'y=log tan(π/4+x/2) — prove dy/dx−sec x=0',  codes:[{c:'22S1', mk:2}]},
+  {id:'23',s:'B',m:2,t:'VSA',   topic:'∫(x−3)/(x−1)³eˣdx  OR  area shaded region', codes:[{c:'23S1',mk:2,l:'23A'},{c:'23ORS1',mk:2,l:'23B-OR'}]},
+  {id:'24',s:'B',m:2,t:'VSA',   topic:"f(x+y)=f(x)f(y), f(5)=2, f'(0)=3 — f'(5)", codes:[{c:'24S1', mk:2}]},
+  {id:'25',s:'B',m:2,t:'VSA',   topic:'ΔOAB — area of parallelogram (OA, OP)',      codes:[{c:'25S1', mk:2}]},
+  {id:'26',s:'C',m:3,t:'SA',    topic:'xʸ=eˣ⁻ʸ prove dy/dx  OR  parametric d²y/dx²',codes:[{c:'26_iS1',mk:1,l:'i'},{c:'26_iiS1',mk:1,l:'ii'},{c:'26_iiiS1',mk:1,l:'iii'},{c:'26ORS1',mk:3,l:'OR'}]},
+  {id:'27',s:'C',m:3,t:'SA',    topic:'Spherical ice — prove dr/dt = const',        codes:[{c:'27_iS1',mk:1,l:'i'},{c:'27_iiS1',mk:1,l:'ii'},{c:'27_iiiS1',mk:1,l:'iii'}]},
+  {id:'28',s:'C',m:3,t:'SA',    topic:'Sketch y=|x+1|, integral  OR  area region',  codes:[{c:'28_iS1',mk:1,l:'i'},{c:'28_iiS1',mk:1,l:'ii'},{c:'28_iiiS1',mk:1,l:'iii'},{c:'28ORS1',mk:3,l:'OR'}]},
+  {id:'29',s:'C',m:3,t:'SA',    topic:'Distance from line ∥ z-axis  OR  intersection',codes:[{c:'29_iS1',mk:1,l:'i'},{c:'29_iiS1',mk:1,l:'ii'},{c:'29_iiiS1',mk:1,l:'iii'},{c:'29ORS1',mk:3,l:'OR'}]},
+  {id:'30',s:'C',m:3,t:'SA',    topic:'LPP graphical — max Z=2x+y',                codes:[{c:'30_iS1',mk:1,l:'i'},{c:'30_iiS1',mk:1,l:'ii'},{c:'30_iiiS1',mk:1,l:'iii'}]},
+  {id:'31',s:'C',m:3,t:'SA',    topic:'P(Mehul)=0.4, P(exactly one)=0.5',          codes:[{c:'31_iS1',mk:1,l:'i'},{c:'31_iiS1',mk:1,l:'ii'},{c:'31_iiiS1',mk:1,l:'iii'}]},
+  {id:'32',s:'D',m:5,t:'LA',    topic:'Find AB; solve 3×3 system of equations',     codes:[{c:'32_iS1',mk:2,l:'AB'},{c:'32_iiS1',mk:1,l:'AX=B'},{c:'32_iiiS1',mk:1,l:'X=A⁻¹B'},{c:'32_ivS1',mk:1,l:'solution'}]},
+  {id:'33',s:'D',m:5,t:'LA',    topic:'∫₀¹ log(1+x)/(1+x²)dx  OR  ∫(3sinθ−2)cosθ',codes:[{c:'33_iS1',mk:2,l:'i'},{c:'33_iiS1',mk:2,l:'ii'},{c:'33_iiiS1',mk:1,l:'iii'},{c:'33ORS1',mk:5,l:'OR'}]},
+  {id:'34',s:'D',m:5,t:'LA',    topic:'Differential equation  OR  particular soln', codes:[{c:'34_iS1',mk:1,l:'i'},{c:'34_iiS1',mk:1,l:'ii'},{c:'34_iiiS1',mk:2,l:'iii'},{c:'34_ivS1',mk:1,l:'iv'},{c:'34ORS1',mk:5,l:'OR'}]},
+  {id:'35',s:'D',m:5,t:'LA',    topic:'Intersection of lines + perpendicular line', codes:[{c:'35_iS1',mk:1,l:'i'},{c:'35_iiS1',mk:1,l:'ii'},{c:'35_iiiS1',mk:1,l:'iii'},{c:'35_ivS1',mk:1,l:'iv'},{c:'35_vS1',mk:1,l:'v'}]},
+  {id:'36',s:'E',m:4,t:'Case',  topic:'Traffic flow — relations & functions',        codes:[{c:'36_iS1',mk:1,l:'I'},{c:'36_iiS1',mk:1,l:'II'},{c:'36_iiiS1',mk:2,l:'IIIA'},{c:'36_iiiORS1',mk:2,l:'IIIB-OR'}]},
+  {id:'37',s:'E',m:4,t:'Case',  topic:'LED bulb profit — P(x) analysis',            codes:[{c:'37_iS1',mk:1,l:'I'},{c:'37_iiS1',mk:1,l:'II'},{c:'37_iiiS1',mk:2,l:'IIIA'},{c:'37_iiiORS1',mk:2,l:'IIIB-OR'}]},
+  {id:'38',s:'E',m:4,t:'Case',  topic:'Screen time — Bayes theorem',                codes:[{c:'38_iS1',mk:2,l:'I'},{c:'38_iiS1',mk:2,l:'II'}]},
+];
+
+const SEC_COLOR = {A:'sec-A',B:'sec-B',C:'sec-C',D:'sec-D',E:'sec-E'};
+const SEC_NAME  = {A:'Section A — MCQ (1mk)',B:'Section B — VSA (2mk)',C:'Section C — SA (3mk)',D:'Section D — LA (5mk)',E:'Section E — Case (4mk)'};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let activeTool    = 'green';
+let currentQIdx   = 0;
+let annotations   = {};   // { qId: [ann,...] }
+let confirmed     = {};   // { qId: marks }
+let auditLog      = [];
+let hashChain     = '00000000';
+let pdfDoc        = null;
+let pdfPages      = {};   // { pageNum: imageDataUrl }
+let currentPage   = 1;
+let totalPages    = 1;
+let fileType      = null; // 'pdf' | 'image'
+let sheetWidth    = 0;
+let sheetHeight   = 0;
+
+// ── Build question list ───────────────────────────────────────────────────────
+function buildQList() {
+  const el = document.getElementById('qlist');
+  let html = '', lastSec = '';
+  QUESTIONS.forEach((q, idx) => {
+    if (q.s !== lastSec) {
+      html += `<div class="sec-label ${SEC_COLOR[q.s]}">${SEC_NAME[q.s]}</div>`;
+      lastSec = q.s;
+    }
+    const anns   = annotations[q.id] || [];
+    const conf   = confirmed[q.id];
+    const dotCls = q.blank ? 'blank' : conf !== undefined ? 'done' : anns.length ? 'partial' : '';
+    const mkDisp = conf !== undefined ? `${conf}/${q.m}` : `${q.m}m`;
+    const mkColor= conf !== undefined ? 'done' : '';
+    html += `<div class="q-row${currentQIdx===idx?' active':''}" onclick="selectQ(${idx})">
+      <div class="q-dot ${dotCls}"></div>
+      <div style="flex:1;min-width:0">
+        <div class="q-label">Q${q.id} <span style="font-size:9px;color:var(--muted);font-weight:400">${q.t}</span></div>
+        <div class="q-sub">${q.topic}</div>
+      </div>
+      <div class="q-mk ${mkColor}">${mkDisp}</div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function selectQ(idx) {
+  currentQIdx = idx;
+  const q = QUESTIONS[idx];
+  document.getElementById('cq-name').textContent = `Q${q.id} — ${q.t}`;
+  document.getElementById('cq-topic').textContent = q.topic;
+  document.getElementById('q-max').textContent = `/ ${q.m} max`;
+
+  // Populate OSM code selector
+  const sel = document.getElementById('code-select');
+  sel.innerHTML = q.codes.map(c => `<option value="${c.c}">${c.c}${c.l?' ('+c.l+')':''} — ${c.mk}mk</option>`).join('');
+
+  updateRightPanel();
+  buildQList();
+}
+
+// ── File upload / PDF rendering ───────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) loadFile(file);
+  e.target.value = '';
+});
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.body.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+}
+
+async function loadFile(file) {
+  const wrap = document.getElementById('canvas-wrap');
+  if (file.type === 'application/pdf') {
+    fileType = 'pdf';
+    showLoading(true);
+    const arrayBuffer = await file.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    totalPages = pdfDoc.numPages;
+    currentPage = 1;
+    await renderPDFPage(currentPage);
+    showLoading(false);
+    updatePageNav();
+    toast(`📄 PDF loaded — ${totalPages} page${totalPages>1?'s':''}`);
+  } else if (file.type.startsWith('image/')) {
+    fileType = 'image';
+    totalPages = 1;
+    currentPage = 1;
+    const url = URL.createObjectURL(file);
+    pdfPages[1] = url;
+    renderImagePage(url);
+    updatePageNav();
+    toast('🖼 Image loaded');
+  }
+}
+
+async function renderPDFPage(pageNum) {
+  if (!pdfDoc) return;
+  document.getElementById('loading-fill').style.width = '30%';
+
+  if (!pdfPages[pageNum]) {
+    const page  = await pdfDoc.getPage(pageNum);
+    const scale = 2.0;
+    const vp    = page.getViewport({ scale });
+    const canvas= document.createElement('canvas');
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
+    const ctx = canvas.getContext('2d');
+    document.getElementById('loading-fill').style.width = '60%';
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    pdfPages[pageNum] = canvas.toDataURL('image/jpeg', 0.92);
+    document.getElementById('loading-fill').style.width = '90%';
+  }
+
+  renderImagePage(pdfPages[pageNum]);
+  document.getElementById('loading-fill').style.width = '100%';
+}
+
+function renderImagePage(url) {
+  const wrap = document.getElementById('canvas-wrap');
+  wrap.innerHTML = `
+    <div id="sheet-container">
+      <img id="sheet-img" src="${url}" draggable="false"
+           onload="onSheetLoad(this)"
+           onerror="this.style.display='none'">
+      <div id="ann-layer"></div>
+    </div>`;
+  document.getElementById('sheet-container').addEventListener('click', handleCanvasClick);
+  redrawAnnotations();
+}
+
+function onSheetLoad(img) {
+  sheetWidth  = img.offsetWidth;
+  sheetHeight = img.offsetHeight;
+}
+
+// ── Page navigation ───────────────────────────────────────────────────────────
+function updatePageNav() {
+  document.getElementById('page-info').textContent = `Page ${currentPage} / ${totalPages}`;
+  document.getElementById('prev-page').disabled = currentPage <= 1;
+  document.getElementById('next-page').disabled = currentPage >= totalPages;
+}
+
+async function changePage(delta) {
+  const np = currentPage + delta;
+  if (np < 1 || np > totalPages) return;
+  currentPage = np;
+  if (fileType === 'pdf') {
+    showLoading(true);
+    await renderPDFPage(currentPage);
+    showLoading(false);
+  } else {
+    renderImagePage(pdfPages[currentPage]);
+  }
+  updatePageNav();
+}
+
+function showLoading(show) {
+  document.getElementById('loading').style.display = show ? 'flex' : 'none';
+  if (!show) document.getElementById('loading-fill').style.width = '0%';
+}
+
+// ── Tool selection ────────────────────────────────────────────────────────────
+const TOOL_IDS = ['green','red','blue','repeat','cross','blank'];
+const BTN_IDS  = {green:'btn-green',red:'btn-red',blue:'btn-blue',repeat:'btn-repeat',cross:'btn-cross',blank:'btn-blank'};
+
+function setTool(tool) {
+  activeTool = tool;
+  TOOL_IDS.forEach(t => document.getElementById(BTN_IDS[t]).classList.remove('active'));
+  document.getElementById(BTN_IDS[tool]).classList.add('active');
+  const mi = document.getElementById('marks-input');
+  mi.disabled = tool !== 'green';
+  mi.style.opacity = tool !== 'green' ? '0.3' : '1';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const map = {'1':'green','2':'red','3':'blue','4':'repeat','5':'cross','6':'blank'};
+  if (map[e.key]) setTool(map[e.key]);
+});
+
+// ── Canvas click — place annotation ──────────────────────────────────────────
+function handleCanvasClick(e) {
+  // Don't fire on delete buttons
+  if (e.target.classList.contains('del-btn') || e.target.closest('.del-btn')) return;
+
+  const container = document.getElementById('sheet-container');
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const xPct = (e.clientX - rect.left) / rect.width;
+  const yPct = (e.clientY - rect.top)  / rect.height;
+  if (yPct < 0 || yPct > 1 || xPct < 0 || xPct > 1) return;
+
+  const q       = QUESTIONS[currentQIdx];
+  const code    = document.getElementById('code-select').value || q.codes[0].c;
+  const codeInfo= q.codes.find(c => c.c === code) || q.codes[0];
+  const marks   = parseFloat(document.getElementById('marks-input').value) || 0;
+
+  // Validate green marks
+  if (activeTool === 'green') {
+    const existing = (annotations[q.id]||[]).filter(a=>a.type==='green'&&a.code===code)
+                      .reduce((s,a)=>s+(a.marks||0),0);
+    if (existing + marks > codeInfo.mk) {
+      toast(`⚠ Exceeds max for ${code} (${codeInfo.mk}mk)`);
+      return;
+    }
+  }
+
+  // Blank page: clear all annotations for this question, stamp once
+  if (activeTool === 'blank') {
+    annotations[q.id] = [];
+    q.blank = true;
+  } else {
+    q.blank = false;
+  }
+
+  const ann = {
+    id:    `a${Date.now()}${Math.random().toString(36).slice(2,5)}`,
+    type:  activeTool,
+    marks: activeTool==='green'?marks : activeTool==='red'?0 : null,
+    code, xPct, yPct,
+    page:  currentPage,
+    ts:    Date.now(),
+  };
+
+  if (activeTool === 'blank') {
+    // Only one blank stamp per question
+    annotations[q.id] = [ann];
+    confirmed[q.id] = 0;
+    addAudit(q.id, 'blank_page', { code });
+    updateRightPanel(); buildQList(); updateScoreGrid();
+    toast('☐ Blank page marked — 0 marks');
+    redrawAnnotations();
+    return;
+  }
+
+  if (!annotations[q.id]) annotations[q.id] = [];
+  annotations[q.id].push(ann);
+  addAudit(q.id, 'annotate', { type:activeTool, marks:ann.marks, code });
+
+  redrawAnnotations();
+  updateRightPanel();
+  buildQList();
+
+  const msg = activeTool==='green'?`✓ ${marks}mk — ${code}`
+            : activeTool==='red'  ?`0 marks — ${code}`
+            : activeTool==='cross'?`⊗ Wrong mark`
+            : activeTool==='repeat'?`REPEAT ANS+ stamped`
+            : `Σ Subtotal placed`;
+  toast(msg);
+}
+
+// ── Redraw all annotation overlays ───────────────────────────────────────────
+function redrawAnnotations() {
+  const layer = document.getElementById('ann-layer');
+  if (!layer) return;
+  layer.innerHTML = '';
+  const q    = QUESTIONS[currentQIdx];
+  const anns = (annotations[q.id]||[]).filter(a=>a.page===currentPage || !a.page);
+
+  anns.forEach(ann => {
+    const el = document.createElement('div');
+    el.className = 'ann-el';
+    el.style.left    = (ann.xPct * 100) + '%';
+    el.style.top     = (ann.yPct * 100) + '%';
+    el.style.transform = 'translate(-50%,-50%)';
+
+    if (ann.type === 'cross') {
+      el.innerHTML = `<div class="cross-circle" onclick="removeAnn('${ann.id}')">✕</div>`;
+    } else if (ann.type === 'blank') {
+      el.innerHTML = `<div class="blank-stamp">BLANK PAGE</div>`;
+    } else if (ann.type === 'repeat') {
+      el.innerHTML = `<div class="ann-box purple"><span style="font-weight:900">R</span>EPEAT ANS+<span class="del-btn" onclick="removeAnn('${ann.id}')">✕</span></div>`;
+    } else if (ann.type === 'blue') {
+      const greens = (annotations[q.id]||[]).filter(a=>a.type==='green'&&a.code===ann.code);
+      const parts  = greens.map(a=>a.marks).join('+');
+      const tot    = greens.reduce((s,a)=>s+(a.marks||0),0);
+      el.innerHTML = `<div class="ann-box blue">${ann.code}:${parts||0}=${tot}<span class="del-btn" onclick="removeAnn('${ann.id}')">✕</span></div>`;
+    } else if (ann.type === 'green') {
+      el.innerHTML = `<div class="ann-box green"><span style="color:#28a745">✓</span><strong>${ann.marks}</strong><span style="font-size:10px;opacity:.7">${ann.code}</span><span class="del-btn" onclick="removeAnn('${ann.id}')">✕</span></div>`;
+    } else if (ann.type === 'red') {
+      el.innerHTML = `<div class="ann-box red"><strong>0</strong><span style="font-size:10px;opacity:.7">${ann.code}</span><span class="del-btn" onclick="removeAnn('${ann.id}')">✕</span></div>`;
+    }
+    layer.appendChild(el);
+  });
+}
+
+function removeAnn(annId) {
+  const q = QUESTIONS[currentQIdx];
+  annotations[q.id] = (annotations[q.id]||[]).filter(a=>a.id!==annId);
+  addAudit(q.id,'remove',{annId});
+  redrawAnnotations();
+  updateRightPanel();
+  buildQList();
+}
+
+// ── Right panel update ────────────────────────────────────────────────────────
+function updateRightPanel() {
+  const q    = QUESTIONS[currentQIdx];
+  const anns = annotations[q.id] || [];
+  const log  = document.getElementById('ann-log');
+
+  if (anns.length === 0) {
+    log.innerHTML = `<div class="log-empty">No annotations for Q${q.id}.<br>Click on the sheet to place marks.</div>`;
+  } else {
+    log.innerHTML = anns.map(ann => {
+      const barCls = ann.type==='repeat'?'repeat':ann.type;
+      const mark   = ann.type==='green'?`+${ann.marks}`:ann.type==='red'?'0':ann.type==='blank'?'BLANK':ann.type==='repeat'?'RPT':'✕';
+      const mColor = ann.type==='green'?'var(--green)':ann.type==='blue'?'#60a5fa':'var(--muted)';
+      return `<div class="log-entry">
+        <div class="le-bar ${barCls}"></div>
+        <div class="le-info">
+          <div class="le-code">${ann.code}</div>
+          <div class="le-type">${ann.type.toUpperCase()}</div>
+        </div>
+        <span class="le-mark" style="color:${mColor}">${mark}</span>
+        <span class="le-del" onclick="removeAnn('${ann.id}')">✕</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Subtotal string for multi-step questions
+  const subArea = document.getElementById('subtotal-area');
+  const greens  = anns.filter(a=>a.type==='green');
+  if (greens.length > 1) {
+    const parts = greens.map(a=>a.marks).join('+');
+    const tot   = greens.reduce((s,a)=>s+(a.marks||0),0);
+    subArea.innerHTML = `<div class="subtotal-box">${q.id}_i : ${parts} = ${tot}</div>`;
+  } else {
+    subArea.innerHTML = '';
+  }
+
+  // Score card
+  const awarded = anns.filter(a=>a.type==='green').reduce((s,a)=>s+(a.marks||0),0);
+  document.getElementById('q-score').textContent = awarded;
+  const pct = Math.min((awarded/q.m)*100,100);
+  const barEl = document.getElementById('q-bar');
+  barEl.style.width = pct+'%';
+  barEl.style.background = awarded===q.m?'var(--green)':awarded>0?'var(--blue)':'#30363d';
+
+  // Confirmed badge
+  const badge = document.getElementById('confirmed-badge');
+  if (confirmed[q.id] !== undefined) {
+    badge.style.display = 'block';
+    badge.textContent = `✓ Confirmed: ${confirmed[q.id]}/${q.m}`;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  updateScoreGrid();
+}
+
+function updateScoreGrid() {
+  const done  = Object.keys(confirmed).length;
+  const total = Object.values(confirmed).reduce((s,v)=>s+v,0);
+  document.getElementById('sg-done').textContent  = done;
+  document.getElementById('sg-score').textContent = total;
+  document.getElementById('sg-left').textContent  = 38 - done;
+
+  // Trust score
+  const trust = Math.max(0, Math.min(100, Math.round((done/38)*100)));
+  const tb = document.getElementById('trust-badge');
+  tb.textContent = `Trust: ${trust}%`;
+  tb.style.color = trust>=80?'var(--green)':trust>=50?'var(--yellow)':'#f87171';
+  tb.style.borderColor = trust>=80?'#22c55e':trust>=50?'#ca8a04':'#ef4444';
+}
+
+// ── Confirm question ──────────────────────────────────────────────────────────
+function confirmQuestion() {
+  const q    = QUESTIONS[currentQIdx];
+  const anns = annotations[q.id] || [];
+  const awarded = anns.filter(a=>a.type==='green').reduce((s,a)=>s+(a.marks||0),0);
+  confirmed[q.id] = awarded;
+  addAudit(q.id,'confirm',{awarded,max:q.m});
+  toast(`✓ Q${q.id} confirmed: ${awarded}/${q.m}`);
+  if (currentQIdx < QUESTIONS.length-1) {
+    setTimeout(()=>selectQ(currentQIdx+1),280);
+  }
+  updateRightPanel();
+  buildQList();
+}
+
+// ── Audit chain ───────────────────────────────────────────────────────────────
+function addAudit(qId, action, payload) {
+  const ev = {seq:Date.now(),qId,action,payload,iso:new Date().toISOString()};
+  const str = hashChain + JSON.stringify(ev);
+  let h=0; for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h=h&h;}
+  hashChain = Math.abs(h).toString(16).padStart(8,'0');
+  auditLog.push(ev);
+}
+
+// ── Export report ─────────────────────────────────────────────────────────────
+function exportReport() {
+  const totalAwarded = Object.values(confirmed).reduce((s,v)=>s+v,0);
+  const report = {
+    meta:{ platform:'Inkless OSM Evaluator', paper:'CBSE XII Maths SQP 2025-26', generatedAt:new Date().toISOString(), set:'S1' },
+    summary:{ totalAwarded, totalMax:80, confirmedQuestions:Object.keys(confirmed).length, totalQuestions:38, trustScore:parseInt(document.getElementById('trust-badge').textContent.replace('Trust: ','').replace('%','')) },
+    questions: QUESTIONS.map(q=>({
+      id:q.id, section:q.s, type:q.t, topic:q.topic, maxMarks:q.m,
+      awardedMarks:confirmed[q.id]??null, confirmed:confirmed[q.id]!==undefined,
+      isBlankPage: (annotations[q.id]||[]).some(a=>a.type==='blank'),
+      annotations:(annotations[q.id]||[]).map(a=>({...a})),
+    })),
+    auditTrail:{ eventCount:auditLog.length, finalHash:hashChain, events:auditLog },
+  };
+  const blob = new Blob([JSON.stringify(report,null,2)],{type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href=url; a.download='inkless-osm-report.json'; a.click();
+  URL.revokeObjectURL(url);
+  toast('⬇ Report exported as JSON');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+// ── Draw annotations onto a canvas context ────────────────────────────────────
+function drawAnnotationsOnCanvas(ctx, anns, imgW, imgH) {
+  const FONT = 'bold 13px monospace';
+
+  anns.forEach(ann => {
+    const x = ann.xPct * imgW;
+    const y = ann.yPct * imgH;
+
+    ctx.save();
+
+    if (ann.type === 'cross') {
+      // Red circled ✕
+      ctx.strokeStyle = '#dc3545';
+      ctx.fillStyle   = 'rgba(255,255,255,0.92)';
+      ctx.lineWidth   = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle   = '#dc3545';
+      ctx.font        = 'bold 18px sans-serif';
+      ctx.textAlign   = 'center';
+      ctx.textBaseline= 'middle';
+      ctx.fillText('✕', x, y);
+
+    } else if (ann.type === 'blank') {
+      // BLANK PAGE stamp
+      const label = 'BLANK PAGE';
+      ctx.font        = 'bold 13px monospace';
+      const tw        = ctx.measureText(label).width;
+      ctx.fillStyle   = 'rgba(255,255,255,0.95)';
+      ctx.strokeStyle = '#6e7681';
+      ctx.lineWidth   = 2.5;
+      roundRect(ctx, x - tw/2 - 10, y - 12, tw + 20, 24, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle   = '#444';
+      ctx.textAlign   = 'center';
+      ctx.textBaseline= 'middle';
+      ctx.fillText(label, x, y);
+
+    } else if (ann.type === 'repeat') {
+      const label = 'REPEAT ANS+';
+      ctx.font        = 'bold italic 13px monospace';
+      const tw        = ctx.measureText(label).width;
+      ctx.fillStyle   = '#e2d9f3';
+      ctx.strokeStyle = '#6f42c1';
+      ctx.lineWidth   = 2.5;
+      roundRect(ctx, x - 10, y - 13, tw + 24, 26, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle   = '#432874';
+      ctx.textAlign   = 'left';
+      ctx.textBaseline= 'middle';
+      ctx.fillText(label, x - 4, y);
+
+    } else if (ann.type === 'green') {
+      // ✓ marks awarded box
+      const checkW  = 16;
+      const numStr  = String(ann.marks);
+      const codeStr = ann.code;
+      ctx.font      = FONT;
+      const nw      = ctx.measureText(numStr).width;
+      const cw      = ctx.measureText(codeStr).width * 0.85; // code slightly smaller
+      const boxW    = checkW + nw + cw + 28;
+      const boxH    = 22;
+      const bx      = x - 16;
+      const by      = y - boxH / 2;
+      // background + border
+      ctx.fillStyle   = '#d4edda';
+      ctx.strokeStyle = '#28a745';
+      ctx.lineWidth   = 2;
+      roundRect(ctx, bx, by, boxW, boxH, 4);
+      ctx.fill(); ctx.stroke();
+      // checkmark
+      ctx.fillStyle = '#28a745';
+      ctx.font      = 'bold 13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✓', bx + 5, by + boxH / 2);
+      // marks number (bold)
+      ctx.fillStyle = '#155724';
+      ctx.font      = 'bold 13px monospace';
+      ctx.fillText(numStr, bx + 5 + checkW, by + boxH / 2);
+      // code (smaller, muted)
+      ctx.font      = '11px monospace';
+      ctx.fillStyle = '#555';
+      ctx.fillText(codeStr, bx + 5 + checkW + nw + 5, by + boxH / 2);
+
+    } else if (ann.type === 'red') {
+      const numStr  = '0';
+      const codeStr = ann.code;
+      ctx.font      = FONT;
+      const nw      = ctx.measureText(numStr).width;
+      const cw      = ctx.measureText(codeStr).width * 0.85;
+      const boxW    = nw + cw + 22;
+      const boxH    = 22;
+      const bx      = x - 12;
+      const by      = y - boxH / 2;
+      ctx.fillStyle   = '#f8d7da';
+      ctx.strokeStyle = '#dc3545';
+      ctx.lineWidth   = 2;
+      roundRect(ctx, bx, by, boxW, boxH, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle   = '#721c24';
+      ctx.font        = 'bold 13px monospace';
+      ctx.textAlign   = 'left';
+      ctx.textBaseline= 'middle';
+      ctx.fillText(numStr, bx + 6, by + boxH / 2);
+      ctx.font      = '11px monospace';
+      ctx.fillStyle = '#555';
+      ctx.fillText(codeStr, bx + 6 + nw + 4, by + boxH / 2);
+
+    } else if (ann.type === 'blue') {
+      // Subtotal box — build the sum string
+      const qId     = Object.keys(annotations).find(k =>
+        (annotations[k]||[]).some(a => a.id === ann.id));
+      const qAnns   = qId ? (annotations[qId]||[]) : [];
+      const greens  = qAnns.filter(a => a.type==='green' && a.code===ann.code);
+      const parts   = greens.map(a=>a.marks).join(' + ');
+      const tot     = greens.reduce((s,a)=>s+(a.marks||0),0);
+      const label   = `${ann.code} : ${parts||0} = ${tot}`;
+      ctx.font      = 'bold 12px monospace';
+      const tw      = ctx.measureText(label).width;
+      const boxW    = tw + 20;
+      const boxH    = 22;
+      const bx      = x - boxW / 2;
+      const by      = y - boxH / 2;
+      ctx.fillStyle   = '#d1ecf1';
+      ctx.strokeStyle = '#0c7a9e';
+      ctx.lineWidth   = 2;
+      roundRect(ctx, bx, by, boxW, boxH, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle   = '#0c5460';
+      ctx.textAlign   = 'left';
+      ctx.textBaseline= 'middle';
+      ctx.fillText(label, bx + 10, by + boxH / 2);
+    }
+
+    ctx.restore();
+  });
+}
+
+// Helper: rounded rectangle path
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── Main PDF export ───────────────────────────────────────────────────────────
+async function exportMarkedPDF() {
+  if (!pdfDoc && !pdfPages[1]) {
+    toast('⚠ Upload an answer sheet first');
+    return;
+  }
+
+  showLoading(true);
+  document.querySelector('#loading-inner div').textContent = 'Building annotated PDF…';
+
+  try {
+    const { jsPDF } = window.jspdf;
+
+    // Pre-render all pages we have annotations on, plus all PDF pages
+    const pagesToRender = new Set([...Array(totalPages).keys()].map(i => i + 1));
+    // Also ensure any page with annotations is rendered
+    Object.values(annotations).forEach(anns =>
+      anns.forEach(a => { if (a.page) pagesToRender.add(a.page); })
+    );
+
+    // Build page images — render any not yet cached
+    const pageImages = {};
+    let processed = 0;
+    for (const pageNum of [...pagesToRender].sort((a,b)=>a-b)) {
+      document.getElementById('loading-fill').style.width =
+        Math.round((processed / pagesToRender.size) * 60) + '%';
+
+      if (pdfPages[pageNum]) {
+        pageImages[pageNum] = pdfPages[pageNum];
+      } else if (pdfDoc) {
+        const page  = await pdfDoc.getPage(pageNum);
+        const scale = 2.0;
+        const vp    = page.getViewport({ scale });
+        const cv    = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        pageImages[pageNum] = cv.toDataURL('image/jpeg', 0.92);
+        pdfPages[pageNum]   = pageImages[pageNum];
+      }
+      processed++;
+    }
+
+    document.getElementById('loading-fill').style.width = '65%';
+
+    // Build a map: pageNum → all annotations across all questions
+    const annsByPage = {};
+    QUESTIONS.forEach(q => {
+      (annotations[q.id] || []).forEach(ann => {
+        const pg = ann.page || 1;
+        if (!annsByPage[pg]) annsByPage[pg] = [];
+        annsByPage[pg].push(ann);
+      });
+    });
+
+    // Create PDF
+    let pdf = null;
+
+    const sortedPages = Object.keys(pageImages).map(Number).sort((a,b)=>a-b);
+    for (let pi = 0; pi < sortedPages.length; pi++) {
+      const pageNum = sortedPages[pi];
+      const imgDataUrl = pageImages[pageNum];
+
+      // Load image to get natural dimensions
+      const img = await loadImageFromDataUrl(imgDataUrl);
+      const imgW = img.naturalWidth;
+      const imgH = img.naturalHeight;
+
+      // Create off-screen canvas — draw base image + annotations
+      const cv  = document.createElement('canvas');
+      cv.width  = imgW;
+      cv.height = imgH;
+      const ctx = cv.getContext('2d');
+
+      // Draw the page image
+      ctx.drawImage(img, 0, 0, imgW, imgH);
+
+      // Draw all annotations for this page
+      const pageAnns = annsByPage[pageNum] || [];
+      if (pageAnns.length > 0) {
+        drawAnnotationsOnCanvas(ctx, pageAnns, imgW, imgH);
+      }
+
+      // Draw summary footer on EVERY page: "Page X/N | Total: Y/80"
+      drawPageFooter(ctx, imgW, imgH, pageNum, sortedPages.length);
+
+      // Convert to JPEG for PDF
+      const flatImg = cv.toDataURL('image/jpeg', 0.88);
+
+      // PDF page size = A4 in mm, scale to fit
+      const A4W = 210, A4H = 297;
+      const ratio  = Math.min(A4W / (imgW / 3.7795), A4H / (imgH / 3.7795));
+      const pdfW   = (imgW / 3.7795) * ratio;
+      const pdfH   = (imgH / 3.7795) * ratio;
+
+      if (pi === 0) {
+        pdf = new jsPDF({ orientation: pdfH > pdfW ? 'portrait' : 'landscape', unit: 'mm', format: [pdfW, pdfH] });
+      } else {
+        pdf.addPage([pdfW, pdfH], pdfH > pdfW ? 'portrait' : 'landscape');
+      }
+
+      pdf.addImage(flatImg, 'JPEG', 0, 0, pdfW, pdfH);
+
+      document.getElementById('loading-fill').style.width =
+        Math.round(65 + (pi / sortedPages.length) * 30) + '%';
+    }
+
+    // If no pages rendered yet (e.g. single image), do at least page 1
+    if (!pdf) {
+      toast('⚠ No pages to export. Upload a file first.');
+      showLoading(false);
+      return;
+    }
+
+    document.getElementById('loading-fill').style.width = '98%';
+
+    // Add a final summary page
+    addSummaryPage(pdf);
+
+    pdf.save('inkless-osm-marked.pdf');
+    document.getElementById('loading-fill').style.width = '100%';
+    toast('✅ Marked PDF downloaded!');
+
+  } catch (err) {
+    console.error('PDF export error:', err);
+    toast('❌ PDF export failed: ' + err.message);
+  }
+
+  showLoading(false);
+}
+
+// Load an image element from a data URL
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload  = () => resolve(img);
+    img.onerror = reject;
+    img.src     = dataUrl;
+  });
+}
+
+// Draw a slim footer bar on each page canvas
+function drawPageFooter(ctx, imgW, imgH, pageNum, totalPgs) {
+  const totalAwarded = Object.values(confirmed).reduce((s,v)=>s+v,0);
+  const confirmedCount = Object.keys(confirmed).length;
+  const trust = Math.round((confirmedCount / 38) * 100);
+
+  const fh   = 28;
+  const fy   = imgH - fh;
+  // Dark bar
+  ctx.fillStyle = 'rgba(13,17,23,0.88)';
+  ctx.fillRect(0, fy, imgW, fh);
+  // Text
+  ctx.fillStyle    = '#e6edf3';
+  ctx.font         = `bold ${Math.round(imgW * 0.013)}px monospace`;
+  ctx.textAlign    = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Inkless OSM  |  Page ${pageNum}/${totalPgs}`, 12, fy + fh / 2);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4ade80';
+  ctx.fillText(`Score: ${totalAwarded}/80  |  Confirmed: ${confirmedCount}/38  |  Trust: ${trust}%`,
+    imgW / 2, fy + fh / 2);
+  ctx.textAlign    = 'right';
+  ctx.fillStyle    = '#8b949e';
+  ctx.font         = `${Math.round(imgW * 0.011)}px monospace`;
+  ctx.fillText(new Date().toLocaleString(), imgW - 12, fy + fh / 2);
+}
+
+// Add a text summary page at the end of the PDF
+function addSummaryPage(pdf) {
+  const totalAwarded    = Object.values(confirmed).reduce((s,v)=>s+v,0);
+  const confirmedCount  = Object.keys(confirmed).length;
+  const trust           = Math.round((confirmedCount / 38) * 100);
+
+  pdf.addPage([210, 297], 'portrait');
+  const p = pdf;
+
+  // Header
+  p.setFillColor(22, 27, 34);
+  p.rect(0, 0, 210, 297, 'F');
+
+  p.setTextColor(88, 166, 255);
+  p.setFontSize(20);
+  p.setFont('helvetica', 'bold');
+  p.text('Inkless OSM — Evaluation Summary', 105, 20, { align: 'center' });
+
+  p.setTextColor(139, 148, 158);
+  p.setFontSize(10);
+  p.setFont('helvetica', 'normal');
+  p.text('CBSE Class XII Mathematics (041) • SQP 2025-26 • Set S1', 105, 28, { align: 'center' });
+  p.text(`Generated: ${new Date().toLocaleString()}`, 105, 34, { align: 'center' });
+
+  // Score box
+  p.setFillColor(33, 38, 45);
+  p.roundedRect(20, 40, 170, 32, 3, 3, 'F');
+  p.setTextColor(88, 166, 255);
+  p.setFontSize(28);
+  p.setFont('helvetica', 'bold');
+  p.text(`${totalAwarded} / 80`, 105, 60, { align: 'center' });
+  p.setFontSize(10);
+  p.setTextColor(139, 148, 158);
+  p.text(`${((totalAwarded/80)*100).toFixed(1)}%  |  ${confirmedCount}/38 questions confirmed  |  Trust Score: ${trust}%`, 105, 68, { align: 'center' });
+
+  // Section breakdown
+  const sections = [
+    { s:'A', name:'Section A (MCQ)',         qs: QUESTIONS.filter(q=>q.s==='A') },
+    { s:'B', name:'Section B (VSA)',          qs: QUESTIONS.filter(q=>q.s==='B') },
+    { s:'C', name:'Section C (SA)',           qs: QUESTIONS.filter(q=>q.s==='C') },
+    { s:'D', name:'Section D (LA)',           qs: QUESTIONS.filter(q=>q.s==='D') },
+    { s:'E', name:'Section E (Case Study)',   qs: QUESTIONS.filter(q=>q.s==='E') },
+  ];
+  const sColors = { A:[88,166,255], B:[74,222,128], C:[250,204,21], D:[251,146,60], E:[192,132,252] };
+
+  let sy = 80;
+  sections.forEach(sec => {
+    const max  = sec.qs.reduce((s,q)=>s+q.m,0);
+    const got  = sec.qs.reduce((s,q)=>s+(confirmed[q.id]||0),0);
+    const done = sec.qs.filter(q=>confirmed[q.id]!==undefined).length;
+    const pct  = max > 0 ? got/max : 0;
+
+    p.setFillColor(33,38,45);
+    p.roundedRect(20, sy, 170, 16, 2, 2, 'F');
+    p.setTextColor(...sColors[sec.s]);
+    p.setFontSize(9);
+    p.setFont('helvetica','bold');
+    p.text(sec.name, 25, sy + 10);
+    p.setTextColor(230,237,243);
+    p.text(`${got}/${max}  (${done}/${sec.qs.length} confirmed)`, 185, sy + 10, { align:'right' });
+    // Progress bar
+    p.setFillColor(48,54,61);
+    p.roundedRect(20, sy + 13, 170, 3, 1, 1, 'F');
+    p.setFillColor(...sColors[sec.s]);
+    p.roundedRect(20, sy + 13, 170 * pct, 3, 1, 1, 'F');
+    sy += 20;
+  });
+
+  // Per-question table
+  sy += 6;
+  p.setTextColor(88,166,255);
+  p.setFontSize(9);
+  p.setFont('helvetica','bold');
+  p.text('Question-wise Marks', 20, sy);
+  sy += 5;
+
+  const COL = [20, 35, 55, 100, 140, 170];
+  p.setFillColor(33,38,45);
+  p.rect(20, sy, 170, 7, 'F');
+  p.setTextColor(139,148,158);
+  p.setFontSize(7.5);
+  ['Q#','Sec','Type','Topic','Awarded','Status'].forEach((h,i) => {
+    p.text(h, COL[i]+1, sy+5);
+  });
+  sy += 8;
+
+  QUESTIONS.forEach((q, idx) => {
+    if (sy > 280) { p.addPage([210,297],'portrait'); sy = 15; }
+    const conf   = confirmed[q.id];
+    const isBlank= (annotations[q.id]||[]).some(a=>a.type==='blank');
+    const status = isBlank ? 'BLANK' : conf !== undefined ? `${conf}/${q.m}` : '—';
+    const txtColor = isBlank ? [110,118,129] : conf === q.m ? [74,222,128] : conf !== undefined && conf > 0 ? [88,166,255] : conf === 0 ? [248,113,113] : [139,148,158];
+
+    p.setFillColor(idx%2===0?20:26, idx%2===0?23:28, idx%2===0?29:34);
+    p.rect(20, sy, 170, 6, 'F');
+    p.setTextColor(230,237,243);
+    p.setFontSize(7);
+    p.text(`Q${q.id}`, COL[0]+1, sy+4.5);
+    p.text(q.s, COL[1]+1, sy+4.5);
+    p.text(q.t, COL[2]+1, sy+4.5);
+    p.text(q.topic.substring(0,30)+(q.topic.length>30?'…':''), COL[3]+1, sy+4.5);
+    p.setTextColor(...txtColor);
+    p.text(status, COL[4]+1, sy+4.5);
+    p.setTextColor(conf!==undefined ? 74:139, conf!==undefined?222:148, conf!==undefined?128:158);
+    p.text(conf!==undefined ? '✓ Done' : '○ Pending', COL[5]+1, sy+4.5);
+    sy += 6;
+  });
+
+  // Footer
+  p.setTextColor(72,79,88);
+  p.setFontSize(8);
+  p.text(`Inkless OSM Evaluator  •  Hash: ${hashChain}  •  Events: ${auditLog.length}`,
+    105, 292, { align:'center' });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildQList();
+selectQ(0);
+</script>
+</body>
+</html>
